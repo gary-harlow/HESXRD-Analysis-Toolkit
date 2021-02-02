@@ -25,7 +25,7 @@ import sys,os
 from PyQt5.QtWidgets import QApplication, QWidget, QInputDialog, QLineEdit, QFileDialog, QCheckBox, QProgressBar
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QMainWindow, QLabel, QGridLayout, QWidget,QPushButton
+from PyQt5.QtWidgets import QMainWindow, QLabel, QGridLayout, QWidget
 from PyQt5.QtCore import QSize, Qt    
 from scipy import interpolate
 import pyqtgraph.parametertree.parameterTypes as pTypes
