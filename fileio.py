@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import numpy as np
 from PyQt5.QtWidgets import QMessageBox
 import pyqtgraph.parametertree.parameterTypes as pTypes
@@ -330,6 +332,7 @@ class ImageStack():
 
             self.angle2image=interpolate.interp1d((self.start_angle,self.end_angle),(0,self.number_of_images))
             self.angle_mode = True
+            print("should be true now")
 
         #P07, DESY
         if self.beamline == 3: 

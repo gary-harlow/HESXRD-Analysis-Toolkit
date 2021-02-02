@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+# -*- coding: utf-8 -*-
 import sys,os
 from PyQt5.QtWidgets import QApplication, QWidget, QInputDialog, QLineEdit, QFileDialog, QCheckBox, QProgressBar
 from PyQt5.QtGui import QIcon, QPixmap
@@ -80,7 +83,6 @@ class Ram(QWidget):
             self.imgLeft.resetTransform()
             self.angleRegion.setMovable(False)  
 
-            numba = self.p.param('Data Processing', 'Use Numba').value()
             binning=int(self.p.param('Data Processing', 'Binning').value())
             res=int(self.p.param('Data Processing', 'hkl Resolution').value())
     
@@ -95,13 +97,13 @@ class Ram(QWidget):
             angles=np.linspace(start_angle-step_size,end_angle+step_size,number_of_images+2)
             
             #caluclate momentum transfer as this does not depend on the sample rotation
-            qMaps=np.array(self.experiment.dector_frame_to_lab_frame(self.crystal,numba,binning))
+            qMaps=np.array(self.experiment.dector_frame_to_lab_frame(self,binning))
 
             #We only need one row since we assume 90 degrees in plane        
             qCentreRow=qMaps[:,int(self.p.param('Experiment', 'Center Pixel Y').value()/binning)]
 
             #we now return list of hlk coorinates for each angle, along the one row  
-            pixMaps=self.experiment.get_coords(angles,qCentreRow,numba,self.crystal)
+            pixMaps=self.experiment.get_coords(angles,qCentreRow,self)
 
             #We average along the 'L' direction, so we just get one row        
             #qSliceTmp=np.mean(self.ImageData[fromImage:toImage,:,int(self.qRegion.getRegion()[0]):int(self.qRegion.getRegion()[1])],axis=2)
@@ -150,7 +152,7 @@ class Ram(QWidget):
 
     def makehkl(self):
         """Convert pixel coordinates to reciprical coordinates"""
-
+        import time
         self.statusLabel.setText('Calculating reciprocal lattice coordinates (Please wait)..')
         self.update()
         self.ImgState=1
@@ -167,25 +169,29 @@ class Ram(QWidget):
         self.p3.getAxis('left').setLabel("L (RLU)")     
                       
         binning=int(self.p.param('Data Processing', 'Binning').value())
-        numba = self.p.param('Data Processing', 'Use Numba').value()
+        numba = False
         second_det = self.p.param('Data Processing', 'Use 2nd detector').value()  
         res=int(self.p.param('Data Processing', 'hkl Resolution').value())      
 
         #calculate the transformation[0]==h, [1]==k, [2]==l,[3]==sqrt(h^2 +k^2),[4]= intensity correciton
-        self.pixMaps=self.experiment.dector_frame_to_hkl_frame(self.crystal,binning,numba,second_det,0)
-        pixMaps = self.pixMaps #just don't want to type self all the time       
-   
-        self.showData = self.image_stack.get_image(self.angleRegion.getRegion()[0], self.angleRegion.getRegion()[1])
 
+        self.pixMaps=self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)
+        pixMaps = self.pixMaps #just don't want to type self all the time       
+        self.showData = self.image_stack.get_image(self.angleRegion.getRegion()[0], self.angleRegion.getRegion()[1])
+   
         #create grid space for interpolation 
         self.grid_hk, self.grid_l=np.mgrid[np.min(pixMaps[3]):np.max(pixMaps[3]):res*1j,np.min(pixMaps[2]):np.max(pixMaps[2]):res*1j]
 
-        #do 2d interpolation, and apply intensity corrections if needed
+  
+        grid_i = interpolate.griddata((pixMaps[3],pixMaps[2]),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='nearest')
+
+        """#do 2d interpolation, and apply intensity corrections if needed
         if self.p.param('Data Processing', 'Apply intensity corrections').value():
             #we unravel each pixmap to get lists of coordinates (hk, l, correction)
             grid_i = interpolate.griddata((pixMaps[3].ravel(),pixMaps[2].ravel()),np.ravel(pixMaps[4]*np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='linear')
         else:
-            grid_i = interpolate.griddata((pixMaps[3].ravel(),pixMaps[2].ravel()),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='linear')
+            grid_i = interpolate.griddata((pixMaps[3].ravel(),pixMaps[2].ravel()),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='linear')"""
+            
 
         grid_i[grid_i<=0]=np.nan
         #replace showData with the 
@@ -419,7 +425,15 @@ class Ram(QWidget):
             self.p.param('Crystal', 'α₁').setValue(90)
             self.p.param('Crystal', 'α₂').setValue(90)
             self.p.param('Crystal', 'α₃').setValue(90)
+        #TiO2
+        if self.p.param('Crystal','Preset').value() == 3:
+            self.p.param('Crystal', 'a₁').setValue(6.496)
+            self.p.param('Crystal', 'a₂').setValue(2.959)
+            self.p.param('Crystal', 'a₃').setValue(6.496)
 
+            self.p.param('Crystal', 'α₁').setValue(90)
+            self.p.param('Crystal', 'α₂').setValue(90)
+            self.p.param('Crystal', 'α₃').setValue(90)
 
 
     def saveprofile(self):
@@ -599,9 +613,10 @@ class Ram(QWidget):
                 {'name': 'hkl Resolution', 'type': 'int', 'value': 1000, 'step': 1},
                 {'name': 'White background', 'type': 'bool', 'value': False},
                 {'name': 'Mean Images instead of Max', 'type': 'bool',},
-                {'name': 'Use Numba', 'type': 'bool', 'value': True},
-                {'name': 'Use 2nd detector', 'type': 'bool', 'value': False},                
+                {'name': 'Acceleration', 'type': 'list', 'values': {"none": 0, "numba (cpu)": 1, "cuda (gpu)": 2},'value': 0},
+                 {'name': 'Use 2nd detector', 'type': 'bool', 'value': False},                
                 {'name': 'Apply intensity corrections', 'type': 'bool', 'value': False},
+                {'name': 'Correct for refraction', 'type': 'bool', 'value': False},
                 {'name': 'Intensity offset', 'type': 'float', 'value': 0, 'step':10},
                 {'name': 'Multiply intensity by', 'type': 'float', 'value': 1, 'step':0.1},
                 {'name': 'Image Rotation', 'type': 'list', 'values': {"0 degrees": 0, "90 degrees": 1, "180 degress": 2,"270 degress": 3},'value': 0},
@@ -699,7 +714,7 @@ class Ram(QWidget):
 
         win.nextRow()
         self.p2 = win.addPlot(row=3,colspan=3)
-        self.angleRegion=pg.LinearRegionItem(swapMode='push')
+        self.angleRegion=pg.LinearRegionItem()
         self.angleRegion.sigRegionChanged.connect(self.updateRegion)
      
 
