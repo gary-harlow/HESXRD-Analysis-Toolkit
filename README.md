@@ -17,3 +17,5 @@ For more general reciprocal space transformaitons abd binning
 See the ESRF Binoculars software. 
 
 @author: Sebastian Pfaff and Gary S. Harlow
+![Alt text](https://github.com/gary-harlow/HESXRD-Analysis-Toolkit/blob/main/hat.png?raw=true "Screenshot")
+
