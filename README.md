@@ -13,7 +13,7 @@ It is designed to be user-friendly and fairly quick so that it can
 be easily used during an experiment. For there are some limitations in that the 
 in-plane lattice vectors are expected to be 90 degrees.
 
-For more general reciprocal space transformaitons abd binning
+For more general reciprocal space transformaitons and binning
 See the ESRF Binoculars software. 
 
 @author: Sebastian Pfaff and Gary S. Harlow
