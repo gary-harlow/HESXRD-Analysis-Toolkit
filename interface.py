@@ -16,10 +16,20 @@ import numpy as np
 import fabio
 import pickle
 import fileio
+import importlib
 
+import plotting
 from crystal import *
 from fileio import *
 
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import matplotlib.gridspec as gridspec
+from mpl_toolkits.axisartist.grid_helper_curvelinear import GridHelperCurveLinear
+from mpl_toolkits.axisartist import Subplot
+import matplotlib.ticker as ticker
+from scipy import interpolate
 
 
 class Ram(QWidget):
@@ -115,20 +125,29 @@ class Ram(QWidget):
             #add zeros to the ends so we don't try and interperlate past the angles
             emptyr = np.zeros_like(qCentreRow[0])        
             qSlice = np.vstack((emptyr, qSliceTmp,emptyr))      
-                
+            gam_angle= self.p.param('Crystal', 'α₃').value
+
+            def tr(h, k, angle):
+                if angle == 120:
+                    h, k = np.asarray(h), np.asarray(k)
+                    return (np.sqrt(3)/2)*h,(k+0.5*h)                
+                else:
+                    return h,k
             #create coordinate grids, and interpolate data
             self.grid_h, self.grid_k=np.mgrid[np.min(pixMaps[0]):np.max(pixMaps[0]):res*1j,np.min(pixMaps[1]):np.max(pixMaps[1]):res*1j]
-            grid_i = interpolate.griddata((pixMaps[0].ravel(),pixMaps[1].ravel()),np.ravel(qSlice),(self.grid_h, self.grid_k),method='linear')
+            grid_i = interpolate.griddata(tr(pixMaps[0].ravel(),pixMaps[1].ravel(),gam_angle),np.ravel(qSlice),(self.grid_h, self.grid_k),method='linear')
 
             self.p3.getAxis('bottom').setGrid(255)
             self.p3.getAxis('left').setGrid(255)
-
             self.p3.getAxis('bottom').setZValue(1)
-            self.p3.getAxis('bottom').setLabel("H (RLU)")
-
-            
             self.p3.getAxis('left').setZValue(1)
-            self.p3.getAxis('left').setLabel("K (RLU)")
+
+            if self.crystal.param('Reciprical Units').value() == 0:
+                self.p3.getAxis('bottom').setLabel("Qx (Å⁻¹)")    
+                self.p3.getAxis('left').setLabel("Qy (Å⁻¹)")    
+            else:            
+                self.p3.getAxis('bottom').setLabel("H (RLU)")          
+                self.p3.getAxis('left').setLabel("K (RLU)")
 
             
             #grid_i[grid_i<=0]=np.nan
@@ -137,7 +156,7 @@ class Ram(QWidget):
             kScale=(np.max(pixMaps[1])-np.min(pixMaps[1]))/res
             self.p3.getViewBox().setAspectLocked(True)
             self.showData=grid_i
-            grid_i[grid_i<=0]=np.nan
+            #grid_i[grid_i<=0]=np.nan
             self.lShift=np.min(pixMaps[2])
             self.hist.setImageItem(self.imgLeft)
             self.imgLeft.setImage(grid_i)
@@ -163,10 +182,15 @@ class Ram(QWidget):
 
         self.p3.getAxis('bottom').setGrid(255)
         self.p3.getAxis('left').setGrid(255)     
-        self.p3.getAxis('bottom').setZValue(1)
-        self.p3.getAxis('bottom').setLabel("sqrt(H^2 + K^2) (RLU)")    
+        self.p3.getAxis('bottom').setZValue(1)        
         self.p3.getAxis('left').setZValue(1)
-        self.p3.getAxis('left').setLabel("L (RLU)")     
+
+        if self.crystal.param('Reciprical Units').value() == 0:
+            self.p3.getAxis('bottom').setLabel("Qᵣ(Å⁻¹)")    
+            self.p3.getAxis('left').setLabel("L (RLU)")         
+        else:
+            self.p3.getAxis('bottom').setLabel("sqrt(H^2 + K^2) (RLU)")    
+            self.p3.getAxis('left').setLabel("L (RLU)")     
                       
         binning=int(self.p.param('Data Processing', 'Binning').value())
         numba = False
@@ -193,7 +217,7 @@ class Ram(QWidget):
             grid_i = interpolate.griddata((pixMaps[3].ravel(),pixMaps[2].ravel()),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='linear')"""
             
 
-        grid_i[grid_i<=0]=np.nan
+        #grid_i[grid_i<=0]=np.nan
         #replace showData with the 
         self.showData=grid_i
         self.gridl = self.grid_l
@@ -449,37 +473,47 @@ class Ram(QWidget):
         folderName = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
 
         #get the image indices to use
-        if self.LogFile is None:
-            fromImage=int(np.round(self.angleRegion.getRegion()[0]))
-            toImage=int(np.round(self.angleRegion.getRegion()[1]))
+        if self.image_stack.angle_mode == False:
+            from_image=int(np.round(self.angleRegion.getRegion()[0]))
+            to_image=int(np.round(self.angleRegion.getRegion()[1]))
         else:
-            angle2image=interpolate.interp1d((self.scanRange[0],self.scanRange[1]),(0,len(self.Images)))
-            fromImage=int(np.round(angle2image(self.angleRegion.getRegion()[0])))
-            toImage=int(np.round(angle2image(self.angleRegion.getRegion()[1])))
+            from_image = int(np.floor(self.image_stack.angle2image(self.angleRegion.getRegion()[0])))
+            to_image = int(np.ceil(self.image_stack.angle2image(self.angleRegion.getRegion()[1])))
 
         #images in our angular range
-        tmp = self.ImageData[fromImage:toImage+1,:,:]
+        tmp = self.image_stack.image_data[from_image:to_image+1,:,:]
         profiles = []
         angles = []
 
+        
 
         for i,image in enumerate(tmp):
             ROIData=self.ctrROI.getArrayRegion(image, self.imgLeft) 
             profiles.append(np.sum(ROIData,axis=1))
-            if self.LogFile is None:
-                angles.append(fromImage+i)
-            else:
-                angles.append(self.allangles[fromImage+i+1])
+            angles.append(self.image_stack.start_angle+i*self.image_stack.get_step())
 
-        #next we loop through each line in
-        profiles = np.asarray(profiles)
-        plt.plot(angles,profiles[:,0])
-        plt.plot(angles,profiles[:,-1])
-        plt.show()
-        #for i in range(len(profiles))
-        #data = np.asarray([self.roixdata,self.roiydata])
-        print(angles)     
-        #np.savetxt(fileName,np.transpose(data),fmt='%10.5f', delimiter=',',newline='\n')    
+        profiles = np.transpose(np.asarray(profiles))
+        res=int(self.p.param('Data Processing', 'hkl Resolution').value())
+        binning=int(self.p.param('Data Processing', 'Binning').value())      
+        second_det = self.p.param('Data Processing', 'Use 2nd detector').value()  
+        self.pixMaps=self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)  
+
+        #we need the L values
+        grid_k, grid_l=np.mgrid[np.min(self.pixMaps[1]):np.max(self.pixMaps[1]):res*1j,np.min(self.pixMaps[2]):np.max(self.pixMaps[2]):res*1j]
+        xRoiData=self.ctrROI.getArrayRegion(grid_l, self.imgLeft)
+        qz = np.sum(xRoiData,axis=1)
+        print(qz)
+
+        np.savetxt(folderName+'/axis.csv',qz, delimiter=',',newline='\n') 
+        
+        for i in range(len(profiles)):
+            fileName = str(folderName)+'/'+str(i)+'.csv'
+            tmp2 = profiles[i]
+            data = np.transpose([angles,tmp2])  
+            np.savetxt(fileName,data, delimiter=',',newline='\n') 
+
+        print(i, "rocking scans saved in folder: ", folderName)
+ 
               
 
     def extractrois(self):
@@ -517,7 +551,7 @@ class Ram(QWidget):
                 self.update()                
                 #keep the background subtracted values
                 bkg_values = np.append(bkg_values,self.roiydata)  
-        print(l_values)     
+ 
 
         y = i_values - bkg_values
         x = l_values
@@ -581,6 +615,32 @@ class Ram(QWidget):
             self.hist.setImageItem(self.imgLeft)   
             self.ImgState = 5
 
+    def makeFigure(self):
+        """This function reloads plotting.py and runs the correct plotting function to
+        generate a figure with matplotlib"""
+
+        options = QFileDialog.Options()
+        fileName, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","png (*.png);;All Files (*)", options=options)     
+        if fileName:
+            importlib.reload(plotting)
+            if self.ImgState == 2:
+                cmin,cmax=self.imgLeft.getLevels()
+                plotting.plot_in_plane(self.grid_h,self.grid_k,self.showData,cmin,cmax, fileName)
+                print("In-plane map saved as: ",fileName)
+            if self.ImgState == 1:
+                cmin,cmax=self.imgLeft.getLevels()
+                plotting.plot_out_of_plane(self.grid_hk,self.grid_l,self.showData,cmin,cmax, fileName)
+                print("Out-of-plane map saved as: ",fileName)
+            if self.ImgState == 0:
+                cmin,cmax=self.imgLeft.getLevels()
+                plotting.plot_out_of_plane(self.showData,cmin,cmax, fileName)
+                print("Image saved as: ",fileName)
+
+  
+
+
+
+
     def save(self):
         state = self.p.saveState()
         pickle.dump(state, open( 'params.bin', "wb" ))      
@@ -619,7 +679,7 @@ class Ram(QWidget):
                 {'name': 'Correct for refraction', 'type': 'bool', 'value': False},
                 {'name': 'Intensity offset', 'type': 'float', 'value': 0, 'step':10},
                 {'name': 'Multiply intensity by', 'type': 'float', 'value': 1, 'step':0.1},
-                {'name': 'Image Rotation', 'type': 'list', 'values': {"0 degrees": 0, "90 degrees": 1, "180 degress": 2,"270 degress": 3},'value': 0},
+                {'name': 'Image Rotation', 'type': 'list', 'values': {"0 degrees": 0, "90 degrees": 1, "180 degrees": 2,"270 degrees": 3},'value': 0},
                 {'name': 'Image Flip U/D', 'type': 'list', 'values': {"True": True,"False": False},'value': False},
                 {'name': 'Image Flip L/R', 'type': 'list', 'values': {"True": True,"False": False},'value': False},
             ]},
@@ -639,6 +699,7 @@ class Ram(QWidget):
                 {'name': 'Pixel Coordinates', 'type': 'action'},
                 {'name': 'Out-of-plane Map', 'type': 'action'},                
                 {'name': 'In-plane Map', 'type': 'action'},
+                {'name': 'Export Figure', 'type': 'action'},
 
             ]},
             {'name': 'Profile tools', 'type': 'group', 'children': [
@@ -650,7 +711,7 @@ class Ram(QWidget):
                 {'name': 'Save Rocking Scans', 'type': 'action'},
                 {'name': 'Extract CTR ROIs', 'type': 'action'},
                 #{'name': 'Batch Extract', 'type': 'action'},                
-                {'name': 'Axis of interest', 'type': 'list',  'values': {"H": 1, "K": 2, "HK": 3,"L": 4}, 'value': 4} ,
+                {'name': 'Axis of interest', 'type': 'list',  'values': {"H (Qx)": 1, "K (Qy)": 2, "HK (Qr)": 3,"L (qz)": 4}, 'value': 4} ,
                 {'name': 'Save ROI', 'type': 'action'},
                 {'name': 'Load ROI', 'type': 'action'},
             ]}
@@ -681,6 +742,7 @@ class Ram(QWidget):
         self.p.param('View Mode', 'Pixel Coordinates').sigActivated.connect(self.rawrefresh)
         self.p.param('View Mode', 'Out-of-plane Map').sigActivated.connect(self.makehkl)        
         self.p.param('View Mode', 'In-plane Map').sigActivated.connect(self.makeInPlane)
+        self.p.param('View Mode', 'Export Figure').sigActivated.connect(self.makeFigure)
 
 
         self.p.param('Data Processing', 'White background').sigValueChanged.connect(toggleBg)

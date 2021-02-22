@@ -54,6 +54,7 @@ class CrystallographyParameters(pTypes.GroupParameter):
         self.addChild({'name': 'β₁', 'type': 'float', 'value': 90,'suffix': '°','suffixGap': ''})
         self.addChild({'name': 'β₂', 'type': 'float', 'value': 90,'suffix': '°','suffixGap': ''})
         self.addChild({'name': 'β₃', 'type': 'float', 'value': 90,'suffix': '°','suffixGap': ''})
+        self.addChild({'name': 'Reciprical Units', 'type': 'list', 'values': {"Q": 0, "HKL": 1}, 'value':1})
 
         self.a1=self.param('a₁')
         self.a2=self.param('a₂')
@@ -148,6 +149,7 @@ class ExperimentParameter(pTypes.GroupParameter):
         p_h=self.param('Horizontal Polarisation').value()
         Binv=window.crystal.calcBInv()
         b1=window.crystal.param('b₁').value()
+        recp_units=window.crystal.param('Reciprical Units').value()
 
         if  acceleration==2:
             if "cuda" not in sys.modules:
@@ -202,29 +204,38 @@ class ExperimentParameter(pTypes.GroupParameter):
                     Crod = 1/math.cos(abs(gam_pix))           
 
                     c_glob[j,i] = Ci*Cd*Crod*P*L
-                    
-                    """apply sample rotations to frame of reference
-                    rotations are phi and omega_h which is angle of incidence
-                    this is eqn 44. in ref. 1"""
-                    so = math.sin(rotDirection*omega_rad)
-                    co = math.cos(rotDirection*omega_rad)
-                    # we deal with the angle of incidence in the momentum transfer calc
-                    ci = 1 #math.cos(angi) 
-                    si = 0 #math.sin(angi)  
 
-                    hphi_1 = so*(ci*qy+si*qz)+co*qx
-                    hphi_2 = co*(ci*qy+si*qz)-so*qx
-                    hphi_3 = ci*qz-si*qy
-                    
-                    #H= Hphi #should be Binv dot Hphi 
-                    # compute the dot product manual since cuda doens't
-                    # support np.dot       
-                    h_glob[j,i] = Binv[0][0]*hphi_1+Binv[0][1]*hphi_2+Binv[0][2]*hphi_3
-                    k_glob[j,i] = Binv[1][0]*hphi_1+Binv[1][1]*hphi_2+Binv[1][2]*hphi_3
-                    l_glob[j,i] = Binv[2][0]*hphi_1+Binv[2][1]*hphi_2+Binv[2][2]*hphi_3
+                    if recp_units == 0:
+                        h_glob[j,i] = qx
+                        k_glob[j,i] = qy
+                        l_glob[j,i] = qz
+                        hk_glob[j,i] = math.copysign(1,del_pix)*math.sqrt((qx)**2 + (qy)**2)      
 
-                    #this works for non-orthongal coorindates
-                    hk_glob[j,i] = math.copysign(1,del_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)                     
+                    else:
+                    
+                        """apply sample rotations to frame of reference
+                        rotations are phi and omega_h which is angle of incidence
+                        this is eqn 44. in ref. 1"""
+                        so = math.sin(rotDirection*omega_rad)
+                        co = math.cos(rotDirection*omega_rad)
+                        # we deal with the angle of incidence in the momentum transfer calc
+                        ci = 1 #math.cos(angi) 
+                        si = 0 #math.sin(angi)  
+
+                        hphi_1 = so*(ci*qy+si*qz)+co*qx
+                        hphi_2 = co*(ci*qy+si*qz)-so*qx
+                        hphi_3 = ci*qz-si*qy
+                        
+                        #H= Hphi #should be Binv dot Hphi 
+                        # compute the dot product manual since cuda doens't
+                        # support np.dot  
+                        #                         
+                        #hkl
+                        h_glob[j,i] = Binv[0][0]*hphi_1+Binv[0][1]*hphi_2+Binv[0][2]*hphi_3
+                        k_glob[j,i] = Binv[1][0]*hphi_1+Binv[1][1]*hphi_2+Binv[1][2]*hphi_3
+                        l_glob[j,i] = Binv[2][0]*hphi_1+Binv[2][1]*hphi_2+Binv[2][2]*hphi_3
+                        #this works for non-orthongal coorindates
+                        hk_glob[j,i] = math.copysign(1,del_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)                     
                     
                 
             h_global_mem  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x)))
@@ -530,6 +541,7 @@ class ExperimentParameter(pTypes.GroupParameter):
         rotDirection=(self.param('Axis directon').value())
         corrected_angles=corrected_ang
         acceleration=window.p.param('Data Processing', 'Acceleration').value() 
+        recp_units=window.crystal.param('Reciprical Units').value()
 
         if  acceleration==2 or acceleration==1:
             from numba import jit
@@ -538,9 +550,6 @@ class ExperimentParameter(pTypes.GroupParameter):
                 points_h = []
                 points_k = []
                 points_l = []
-                #angle of incidence now down in previous step
-                ci = 1 #np.cos(angi)
-                si = 0 #np.sin(angi)  
                 
                 for i, angle in enumerate(corrected_angles):
                     omega_rad = np.deg2rad(angle) + angleoff
@@ -551,13 +560,21 @@ class ExperimentParameter(pTypes.GroupParameter):
                         qx = qx_list[i]
                         qy = qy_list[i]
                         qz = qz_list[i]           
-                        Hphi = np.array([[so*(ci*qy+si*qz)+co*qx],
-                                        [co*(ci*qy+si*qz)-so*qx],
-                                        [ci*qz-si*qy]])            
-                        H= Binv.dot(Hphi)
-                        points_h.append(H[0][0])
-                        points_k.append(H[1][0])
-                        points_l.append(H[2][0])  
+                        Hphi = np.array([[so*(qy)+co*qx],
+                                        [co*(qy)-so*qx],
+                                        [qz]])    
+
+                        if recp_units == 0:
+                            points_h.append(Hphi[0][0])
+                            points_k.append(Hphi[1][0])
+                            points_l.append(Hphi[2][0]) 
+                        else:                     
+                            H= Binv.dot(Hphi)
+                            points_h.append(H[0][0])
+                            points_k.append(H[1][0])
+                            points_l.append(H[2][0]) 
+
+ 
                 return np.array([points_h,points_k,points_l])
             return(_get_coords())
         else:
