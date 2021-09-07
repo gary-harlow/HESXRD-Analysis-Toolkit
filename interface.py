@@ -3,10 +3,11 @@
 # -*- coding: utf-8 -*-
 import sys,os
 from PyQt5.QtWidgets import QApplication, QWidget, QInputDialog, QLineEdit, QFileDialog, QCheckBox, QProgressBar
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QMatrix2x3, QPixmap
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QLabel, QGridLayout, QWidget,QPushButton
-from PyQt5.QtCore import QSize, Qt    
+from PyQt5.QtCore import QSize, Qt
+from pyqtgraph.widgets.ValueLabel import ValueLabel    
 from scipy import interpolate
 import pyqtgraph.parametertree.parameterTypes as pTypes
 import pyqtgraph as pg
@@ -19,6 +20,7 @@ import fileio
 import importlib
 
 import plotting
+import script
 from crystal import *
 from fileio import *
 
@@ -43,6 +45,8 @@ class Ram(QWidget):
         self.pixMaps=[]
         self.roixdata=None
         self.roiydata=None
+        self.grid_h = None
+        self.grid_k = None
         self.select_l_slice = True
 
         self.crystal=CrystallographyParameters(name='Crystal')
@@ -75,17 +79,13 @@ class Ram(QWidget):
             #reciprocal space (out-of-plane)
             self.p3.setTitle("hk: %0.3f, l: %0.3f, dist. from origin: %0.3f" % (x, y,np.sqrt(x*x+y*y)))
 
-
-    def makeInPlane(self):
-        """Create an in-plane map based on the selected region"""
-        if self.select_l_slice:
-            self.qRegion.show()
-            self.select_l_slice = False
-            self.statusLabel.setText('First you must choose a slice to compress along L')
-        else:
-            if self.image_stack.angle_mode == False:
-                self.statusLabel.setText('Error: You probably need to read the log file in')   
-                return
+   
+    def __makeProjection(self):
+        """Create an in-plane map by generating coordinates for each pixel and place them in the correct histogram bin"""
+        if self.image_stack.angle_mode == False:
+            self.statusLabel.setText('Error: You probably need to read the log file in')   
+            return
+        else:            
 
             self.ctrROI.hide()
             self.p4.hide()
@@ -94,9 +94,34 @@ class Ram(QWidget):
             self.angleRegion.setMovable(False)  
 
             binning=int(self.p.param('Data Processing', 'Binning').value())
-            res=int(self.p.param('Data Processing', 'hkl Resolution').value())
-    
+            second_det = self.p.param('Data Processing', 'Use 2nd detector').value()  
+            projection = self.p.param('View Mode', 'Select Projection').value()
 
+            if self.crystal.param('Reciprical Units').value() == 0:
+                if projection == 0:
+                    self.p3.getAxis('bottom').setLabel("Qx(Å⁻¹)")    
+                    self.p3.getAxis('left').setLabel("Qy (Å⁻¹)")  
+                else:
+                    self.p3.getAxis('left').setLabel("Qz (Å⁻¹)")        
+                    if projection == 1:
+                        self.p3.getAxis('bottom').setLabel("Qx(Å⁻¹)")  
+                    if projection == 2:
+                        self.p3.getAxis('bottom').setLabel("Qy(Å⁻¹)")  
+                    if projection == 3:
+                        self.p3.getAxis('bottom').setLabel("Sqrt(Qx^2 + Qy^2) (Å⁻¹)") 
+            else:
+                if projection == 0:
+                    self.p3.getAxis('left').setLabel("K (RLU)")
+                    self.p3.getAxis('bottom').setLabel("H (RLU)") 
+                else:
+                    self.p3.getAxis('left').setLabel("L (RLU)")        
+                    if projection == 1:
+                        self.p3.getAxis('bottom').setLabel("H (RLU)")  
+                    if projection == 2:
+                        self.p3.getAxis('bottom').setLabel("K (RLU)") 
+                    if projection == 3:
+                        self.p3.getAxis('bottom').setLabel("sqrt(H^2 + k^2) (RLU)") 
+ 
             start_angle = self.angleRegion.getRegion()[0]
             end_angle = self.angleRegion.getRegion()[1]
             number_of_images =self.image_stack.number_of_images_in_range(start_angle,end_angle)
@@ -104,72 +129,45 @@ class Ram(QWidget):
 
             #we add extra angles either side so to avoid problems with interpolation 
             #if angluar range is small
-            angles=np.linspace(start_angle-step_size,end_angle+step_size,number_of_images+2)
+            angles=np.linspace(start_angle-step_size,end_angle+step_size,number_of_images)
+            tmp =self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)
+            qmax = np.max(tmp[3])+0.1
+            qzmax = np.max(tmp[2])+0.1
+            grid_res = self.p.param('Data Processing', 'Grid Size').value()
+            gridstep = (2*qmax/grid_res)
             
-            #caluclate momentum transfer as this does not depend on the sample rotation
-            qMaps=np.array(self.experiment.dector_frame_to_lab_frame(self,binning))
+            self.grid_qy = np.tile((np.arange(-1*qmax,qmax,gridstep)),(math.ceil(2*qmax/gridstep),1))
+            self.grid_qx = np.transpose(self.grid_qy)
+            self.grid_qr = np.sqrt(self.grid_qx**2 + self.grid_qy**2)
 
-            #We only need one row since we assume 90 degrees in plane        
-            qCentreRow=qMaps[:,int(self.p.param('Experiment', 'Center Pixel Y').value()/binning)]
 
-            #we now return list of hlk coorinates for each angle, along the one row  
-            pixMaps=self.experiment.get_coords(angles,qCentreRow,self)
-
-            #We average along the 'L' direction, so we just get one row        
-            #qSliceTmp=np.mean(self.ImageData[fromImage:toImage,:,int(self.qRegion.getRegion()[0]):int(self.qRegion.getRegion()[1])],axis=2)
             from_image = int(np.floor(self.image_stack.angle2image(self.angleRegion.getRegion()[0])))
-            to_image = int(np.ceil(self.image_stack.angle2image(self.angleRegion.getRegion()[1])))
-            print(from_image,to_image)
-            qSliceTmp=np.mean(self.image_stack.image_data[from_image:to_image,:,int(self.qRegion.getRegion()[0]):int(self.qRegion.getRegion()[1])],axis=2)
+            to_image = int(np.ceil(self.image_stack.angle2image(self.angleRegion.getRegion()[1])))      
+            image_data=self.image_stack.image_data[from_image:to_image,::]           
+         
+            grid_i2 = self.experiment.projection_binner(self,binning,second_det,angles,image_data,qmax,qzmax)
+            self.hideMasks()
 
-            #add zeros to the ends so we don't try and interperlate past the angles
-            emptyr = np.zeros_like(qCentreRow[0])        
-            qSlice = np.vstack((emptyr, qSliceTmp,emptyr))      
-            gam_angle= self.p.param('Crystal', 'α₃').value
-
-            def tr(h, k, angle):
-                if angle == 120:
-                    h, k = np.asarray(h), np.asarray(k)
-                    return (np.sqrt(3)/2)*h,(k+0.5*h)                
-                else:
-                    return h,k
-            #create coordinate grids, and interpolate data
-            self.grid_h, self.grid_k=np.mgrid[np.min(pixMaps[0]):np.max(pixMaps[0]):res*1j,np.min(pixMaps[1]):np.max(pixMaps[1]):res*1j]
-            grid_i = interpolate.griddata(tr(pixMaps[0].ravel(),pixMaps[1].ravel(),gam_angle),np.ravel(qSlice),(self.grid_h, self.grid_k),method='linear')
-
-            self.p3.getAxis('bottom').setGrid(255)
-            self.p3.getAxis('left').setGrid(255)
-            self.p3.getAxis('bottom').setZValue(1)
-            self.p3.getAxis('left').setZValue(1)
-
-            if self.crystal.param('Reciprical Units').value() == 0:
-                self.p3.getAxis('bottom').setLabel("Qx (Å⁻¹)")    
-                self.p3.getAxis('left').setLabel("Qy (Å⁻¹)")    
-            else:            
-                self.p3.getAxis('bottom').setLabel("H (RLU)")          
-                self.p3.getAxis('left').setLabel("K (RLU)")
-
-            
-            #grid_i[grid_i<=0]=np.nan
-
-            hScale=(np.max(pixMaps[0])-np.min(pixMaps[0]))/res
-            kScale=(np.max(pixMaps[1])-np.min(pixMaps[1]))/res
             self.p3.getViewBox().setAspectLocked(True)
-            self.showData=grid_i
-            #grid_i[grid_i<=0]=np.nan
-            self.lShift=np.min(pixMaps[2])
-            self.hist.setImageItem(self.imgLeft)
-            self.imgLeft.setImage(grid_i)
-            self.imgLeft.scale(hScale,kScale)
+            self.showData=grid_i2
+
+            #self.hist.setImageItem(self.imgLeft)
+            self.imgLeft.setImage(grid_i2,autoLevels=False)
+            grid_res = self.p.param('Data Processing', 'Grid Size').value()
+
+            self.imgLeft.scale(2*qmax/grid_res,2*qmax/grid_res)
+            self.imgLeft.setPos(-1*qmax,-1*qmax)    
+
+            #self.imgLeft.scale(hScale,kScale)
             
-            self.imgLeft.setPos(np.min(self.grid_h),np.min(self.grid_k))
+            #self.imgLeft.setPos(np.min(self.grid_h),np.min(self.grid_k))
             self.qRegion.hide()
             self.statusLabel.setText('Vewing in recirpocal lattice units, angluar integration is fixed, press pixel view to go back')   
-            self.imgLeft.setLevels([0.99*np.mean(self.showData), 1.01*np.mean(self.showData)]) 
-            self.update()
-            
+            #self.imgLeft.setLevels([0.99*np.mean(self.showData), 1.01*np.mean(self.showData)]) 
+            self.update() 
 
-    def makehkl(self):
+     
+    def detectorTransform(self):
         """Convert pixel coordinates to reciprical coordinates"""
         import time
         self.statusLabel.setText('Calculating reciprocal lattice coordinates (Please wait)..')
@@ -178,6 +176,7 @@ class Ram(QWidget):
         self.imgLeft.resetTransform()
         self.qRegion.hide()
         self.angleRegion.setMovable(False) 
+        self.select_l_slice = True
         self.showData=None
 
         self.p3.getAxis('bottom').setGrid(255)
@@ -187,34 +186,40 @@ class Ram(QWidget):
 
         if self.crystal.param('Reciprical Units').value() == 0:
             self.p3.getAxis('bottom').setLabel("Qᵣ(Å⁻¹)")    
-            self.p3.getAxis('left').setLabel("L (RLU)")         
+            self.p3.getAxis('left').setLabel("Qz (Å⁻¹)")         
         else:
-            self.p3.getAxis('bottom').setLabel("sqrt(H^2 + K^2) (RLU)")    
-            self.p3.getAxis('left').setLabel("L (RLU)")     
+            self.p3.getAxis('left').setLabel("L (RLU)")
+            if self.crystal.param('β₃').value() == 90:
+                   self.p3.getAxis('bottom').setLabel("sqrt((Hphi/b1)^2 + (Kphi)^2) (RLU)")   
+            if self.crystal.param('b₁').value() != self.crystal.param('b₂').value():
+                self.p3.getAxis('bottom').setLabel("sqrt(H^2 + (rK)^2) (RLU)")    
+            else:
+                self.p3.getAxis('bottom').setLabel("sqrt(H^2 + K^2) (RLU)")   
                       
         binning=int(self.p.param('Data Processing', 'Binning').value())
-        numba = False
         second_det = self.p.param('Data Processing', 'Use 2nd detector').value()  
         res=int(self.p.param('Data Processing', 'hkl Resolution').value())      
 
         #calculate the transformation[0]==h, [1]==k, [2]==l,[3]==sqrt(h^2 +k^2),[4]= intensity correciton
-
         self.pixMaps=self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)
-        pixMaps = self.pixMaps #just don't want to type self all the time       
+        #h_values = self.pixMaps[0].ravel()
+        #k_values = self.pixMaps[1].ravel()
+        l_values = self.pixMaps[2].ravel()
+        hk_values = self.pixMaps[3].ravel()
+        c_values = self.pixMaps[4]
+      
         self.showData = self.image_stack.get_image(self.angleRegion.getRegion()[0], self.angleRegion.getRegion()[1])
    
         #create grid space for interpolation 
-        self.grid_hk, self.grid_l=np.mgrid[np.min(pixMaps[3]):np.max(pixMaps[3]):res*1j,np.min(pixMaps[2]):np.max(pixMaps[2]):res*1j]
+        self.grid_hk, self.grid_l=np.mgrid[np.min(hk_values):np.max(hk_values):res*1j,np.min(l_values):np.max(l_values):res*1j]        
+        grid_i = interpolate.griddata((hk_values,l_values),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='nearest')
 
-  
-        grid_i = interpolate.griddata((pixMaps[3],pixMaps[2]),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='nearest')
-
-        """#do 2d interpolation, and apply intensity corrections if needed
-        if self.p.param('Data Processing', 'Apply intensity corrections').value():
+        #do 2d interpolation, and apply intensity corrections if needed
+        if self.p.param('Data Processing', 'Apply Intensity Corrections').value():
             #we unravel each pixmap to get lists of coordinates (hk, l, correction)
-            grid_i = interpolate.griddata((pixMaps[3].ravel(),pixMaps[2].ravel()),np.ravel(pixMaps[4]*np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='linear')
+            grid_i = interpolate.griddata((hk_values,l_values),np.ravel(c_values*np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='linear')
         else:
-            grid_i = interpolate.griddata((pixMaps[3].ravel(),pixMaps[2].ravel()),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='linear')"""
+            grid_i = interpolate.griddata((hk_values,l_values),np.ravel(np.rot90(self.showData,k=1)),(self.grid_hk, self.grid_l),method='nearest')           
             
 
         #grid_i[grid_i<=0]=np.nan
@@ -223,12 +228,14 @@ class Ram(QWidget):
         self.gridl = self.grid_l
 
         #set the image and scale the axis
-        self.imgLeft.setImage(grid_i,autoRange=True, autoLevels=True)
-        self.hist.setImageItem(self.imgLeft)
-        self.imgLeft.scale((np.max(pixMaps[3])-np.min(pixMaps[3]))/res,(np.max(pixMaps[2])-np.min(pixMaps[2]))/res)
-        self.imgLeft.setPos(np.min(pixMaps[3]),np.min(pixMaps[2]))        
-        self.statusLabel.setText('Vewing in recirpocal lattice units, angluar integration is fixed, press Pixel Coordinates to go back')        
+        self.imgLeft.setImage(grid_i,autoLevels=False)
+        #self.hist.setImageItem(self.imgLeft)
+        self.imgLeft.scale((np.max(hk_values)-np.min(hk_values))/res,(np.max(l_values)-np.min(l_values))/res)
+        self.imgLeft.setPos(np.min(hk_values),np.min(l_values))        
+        self.statusLabel.setText('Vewing in recirpocal lattice units, angluar integration is fixed, press Detector View to go back')  
+        self.showMasks()      
         self.update()
+
 
     def updateRegion(self):
         """When the part of the image stack to show is changed we need to update the image displayed, this however is a little complicated
@@ -275,13 +282,45 @@ class Ram(QWidget):
             self.p3.getAxis('bottom').setScale(None)
             self.p3.getAxis('left').setScale(None)
             self.p3.getAxis('bottom').setGrid(0)
-            self.p3.getAxis('left').setGrid(0)
-            self.ctrROICalc()
+            self.p3.getAxis('left').setGrid(0)            
+            self.ROICalc()
             if self.ImgState==0:           
                 self.p3.getAxis('bottom').setLabel("PIXELS")       
-                self.p3.getAxis('left').setLabel("PIXELS")     
+                self.p3.getAxis('left').setLabel("PIXELS") 
 
-    def ctrROICalc(self):
+    def setProfileLog(self, value):
+        """Simple function to change file to make scripting cleaner, not used internally"""
+        self.p.param('Profile tools', 'Log profile').setValue(value)
+
+    def enableProfile(self, value):
+        """Simple function to change file to make scripting cleaner, not used internally"""
+        self.p.param('Profile tools', 'Enable Box Profile').setValue(value)
+
+    def setProfileAxis(self, value):
+        """Simple function to change profile axis to make scripting cleaner, not used internally"""
+        self.p.param('Profile tools', 'Axis of interest').setValue(value)
+    
+    def setProjection(self, value):
+        """Simple function to change profile axis to make scripting cleaner, not used internally"""
+        self.p.param('View Mode', 'Select Projection').setValue(value)
+
+    def setLevels(self, cmin, cmax):
+        self.hist.setLevels(min=cmin, max=cmax)   
+
+    def setColorMap(self, colormap):
+        self.hist.gradient.loadPreset(colormap)
+
+    def setAngleRange(self, start, end):
+        if self.ImgState==0:
+            self.angleRegion.setRegion((start,end))
+        else:
+            print("You can only change the region in pixel mode!")
+    
+    def setUnits(self, unit):
+        self.crystal.param('Reciprical Units').setValue(unit)
+        
+    def ROICalc(self):
+        """Function to update the box profile display"""
         res=int(self.p.param('Data Processing', 'hkl Resolution').value())
         
         if self.p.param('Profile tools', 'Log profile').value():
@@ -291,7 +330,7 @@ class Ram(QWidget):
 
         if not self.p.param('Profile tools', 'Enable Box Profile').value():
             return
-        #pixel view
+        #hkl view
         if self.ImgState==1:
             if self.p.param('Profile tools', 'Axis of interest').value() == 1:
                 grid_h, tmp=np.mgrid[np.min(self.pixMaps[0]):np.max(self.pixMaps[0]):res*1j,np.min(self.pixMaps[2]):np.max(self.pixMaps[2]):res*1j]
@@ -311,91 +350,102 @@ class Ram(QWidget):
             #this allows for background subtraction.             
             self.roiydata = np.mean(ROIData,axis=1)                
             self.CTRCurve.setData(x=xdata,y=self.roiydata)
-        #hkl view
-        elif self.ImgState==2:
-            if self.p.param('Profile tools', 'Axis of interest').value() == 1:
-                xRoiData=self.ctrROI.getArrayRegion(self.grid_h, self.imgLeft)
-            elif self.p.param('Profile tools', 'Axis of interest').value() == 2:
-                xRoiData=self.ctrROI.getArrayRegion(self.grid_k, self.imgLeft)
-            elif self.p.param('Profile tools', 'Axis of interest').value() == 3:
-                xRoiData=self.ctrROI.getArrayRegion(np.sqrt(self.grid_h**2+self.grid_k**2), self.imgLeft)
-            elif self.p.param('Profile tools', 'Axis of interest').value() == 4:                
-                xRoiData=self.ctrROI.getArrayRegion(self.grid_h, self.imgLeft)
 
+        #projectionview 
+        elif self.ImgState==2:
+            projection = self.p.param('View Mode', 'Select Projection').value()
+            
+            #axis = H
+            if self.p.param('Profile tools', 'Axis of interest').value() == 1:
+                #h-k
+                if projection == 0:                
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #h-l
+                elif projection == 1:
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #k-l    
+                elif projection == 2:
+                    print("This projection does not calculate that axis, using qy/k instead")
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #h^2 + k ^2
+                elif projection == 3:
+                    print("This projection does not calculate that axis, using qr/(sqrt(h^2+k^2)) instead")
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+
+            #axis = K     
+            elif self.p.param('Profile tools', 'Axis of interest').value() == 2:
+                #h-k
+                if projection == 0:                                 
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qy, self.imgLeft)
+                #h-l
+                elif projection == 1:
+                    print("This projection does not calculate that axis, using qx/h instead")
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #k-l    
+                elif projection == 2:
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #h^2 + k ^2
+                elif projection == 3:
+                    print("This projection does not calculate that axis, using qr/(sqrt(h^2+k^2)) instead")
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+
+            #axis = qr
+            elif self.p.param('Profile tools', 'Axis of interest').value() == 3:
+                #h-k
+                if projection == 0:                          
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qr, self.imgLeft)
+                #h-l
+                elif projection == 1:
+                    print("This axis could be misleading showing h/qx instead")   
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #k-l    
+                elif projection == 2:
+                    print("This axis could be misleading showing k/qk instead")   
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #h^2 + k ^2
+                elif projection == 3:
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)          
+            #axis = L
+            elif self.p.param('Profile tools', 'Axis of interest').value() == 4:
+                #h-k
+                if projection == 0:  
+                    print("This projection does not calculate that axis, using qx/h instead")                       
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qx, self.imgLeft)
+                #h-l
+                elif projection == 1:
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qy, self.imgLeft)
+                #k-l    
+                elif projection == 2:
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qy, self.imgLeft)
+                #h^2 + k ^2
+                elif projection == 3:
+                    xRoiData=self.ctrROI.getArrayRegion(self.grid_qy, self.imgLeft)   
+
+    
+            
             ROIData=self.ctrROI.getArrayRegion(self.showData, self.imgLeft)  
             xdata=np.mean(xRoiData,axis=1)
             self.roixdata = xdata
             self.roiydata = np.mean(ROIData,axis=1)
             self.CTRCurve.setData(x=xdata,y=self.roiydata)#-np.min(ROIData[0],axis=1))
-        #inplane view
+            
+        #pixel view
         else:      
             ROIData=self.ctrROI.getArrayRegion(self.showData, self.imgLeft)     
             self.roiydata = np.mean(ROIData,axis=1)                
             self.roixdata = range(0,len(np.mean(ROIData,axis=1)))  
             self.CTRCurve.setData(self.roiydata)
 
-    def roipop(self):       
-        """This is a quite testing function to create a matplotlib windows, however
-        it needs integrating into pyqt as plt.show() currently generates warining due
-        to Qt conflicts"""
-
-        #Are we in hkl mode?   
-        if self.ImgState == 1:  
-            res=int(self.p.param('Data Processing', 'hkl Resolution').value())
-            ROIData=self.ctrROI.getArrayRegion(self.showData, self.imgLeft,returnMappedCoords=False)
-
-            #h axis
-            if self.p.param('Profile tools', 'Axis of interest').value() == 1:
-                #we make a mesh grid using the min/max of H coorindate array (pixMaps[0]) and the min/max of L coordinate array pixMaps[2]
-                grid_h, tmp=np.mgrid[np.min(self.pixMaps[0]):np.max(self.pixMaps[0]):res*1j,np.min(self.pixMaps[2]):np.max(self.pixMaps[2]):res*1j]
-                #we then use the region of interest to take h values for each position in the roi
-                xRoiData=self.ctrROI.getArrayRegion(grid_h, self.imgLeft)
-            #k
-            elif self.p.param('Profile tools', 'Axis of interest').value() == 2:
-                grid_k, tmp=np.mgrid[np.min(self.pixMaps[1]):np.max(self.pixMaps[1]):res*1j,np.min(self.pixMaps[2]):np.max(self.pixMaps[2]):res*1j]
-                xRoiData=self.ctrROI.getArrayRegion(grid_k, self.imgLeft)
-            #hk
-            elif self.p.param('Profile tools', 'Axis of interest').value() == 3:
-                xRoiData=self.ctrROI.getArrayRegion(self.grid_hk, self.imgLeft)
-
-            #L axis doesn't make too much sense
-            elif self.p.param('Profile tools', 'Axis of interest').value() == 4:
-                print("L is already the vertical axis please select a diffrent axis")
-                return
-
-            #we already have a mesh grid of l values, so we exctract l values using that
-            yRoiData=self.ctrROI.getArrayRegion(self.gridl, self.imgLeft)           
-
-            #Here we plot
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            cmin,cmax=self.imgLeft.getLevels()
-            ax.pcolormesh(xRoiData,yRoiData,ROIData,vmin=cmin, vmax=cmax,cmap='viridis',shading='auto')
-            ax.grid(True,color='w',linestyle='-', linewidth=0.04)          
-            plt.show()  #This is bad practice!! will cuase error:
-            #QCoreApplication::exec: The event loop is already running
-       
-        #if we are view in pixel coordinates we don't need to do anything too fancy
-        else:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
-            cmin,cmax=self.imgLeft.getLevels()
-            ROIData=self.ctrROI.getArrayRegion(self.showData, self.imgLeft,vmin=cmin, vmax=cmax,cmap='viridis',shading='auto')
-            ax.imshow(ROIData)
-            ax.grid(True,color='w',linestyle='-', linewidth=0.04)
-            ax.set_aspect('equal')    
-            plt.show()          
-
-    def rawrefresh(self):
+    def detectorMode(self):
         """Go back to pixel coordiante mode"""
         self.ImgState=0
         self.select_l_slice = True
         self.angleRegion.setMovable(True)  
-        self.hist.setImageItem(self.imgLeft)        
-        self.imgLeft.show()        
+        #self.hist.setImageItem(self.imgLeft)        
+        #self.imgLeft.show()        
         self.imgLeft.resetTransform()
         self.updateRegion()
-        self.ctrROICalc
+        self.ROICalc
 
         self.p3.getAxis('bottom').setScale(None)
         self.p3.getAxis('left').setScale(None)
@@ -405,6 +455,7 @@ class Ram(QWidget):
         self.p3.getAxis('left').setLabel("PIXELS")        
         self.statusLabel.setText('Viewing in pixel coordinates')
         self.p3.getViewBox().setAspectLocked(False)
+
 
     def data_format_changed(self):
         """We update the interface if a beamline preset is chosen"""
@@ -460,17 +511,21 @@ class Ram(QWidget):
             self.p.param('Crystal', 'α₃').setValue(90)
 
 
-    def saveprofile(self):
-        options = QFileDialog.Options()
-        #options |= QFileDialog.DontUseNativeDialog
-        fileName, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","csv (*.csv);;All Files (*)", options=options)      
+    def saveprofile(self, paramHandle, filename=None):
+        if type(paramHandle) == str:
+            filename =  paramHandle
+
+        if not filename:
+            options = QFileDialog.Options()
+            fileName, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","csv (*.csv);;All Files (*)", options=options)  
         data = np.asarray([self.roixdata,self.roiydata])
         np.savetxt(fileName,np.transpose(data),fmt='%10.5f', delimiter=',',newline='\n')       
 
-    def saverocks(self):
-        options = QFileDialog.Options()
-        #options |= QFileDialog.DontUseNativeDialog
-        folderName = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
+    def saverocks(self, paramHandle, folderName=None):
+        if type(paramHandle) == str:
+            folderName =  paramHandle
+        if not folderName:
+            folderName = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
 
         #get the image indices to use
         if self.image_stack.angle_mode == False:
@@ -483,9 +538,7 @@ class Ram(QWidget):
         #images in our angular range
         tmp = self.image_stack.image_data[from_image:to_image+1,:,:]
         profiles = []
-        angles = []
-
-        
+        angles = []        
 
         for i,image in enumerate(tmp):
             ROIData=self.ctrROI.getArrayRegion(image, self.imgLeft) 
@@ -495,96 +548,44 @@ class Ram(QWidget):
         profiles = np.transpose(np.asarray(profiles))
         res=int(self.p.param('Data Processing', 'hkl Resolution').value())
         binning=int(self.p.param('Data Processing', 'Binning').value())      
-        second_det = self.p.param('Data Processing', 'Use 2nd detector').value()  
-        self.pixMaps=self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)  
+        second_det = self.p.param('Data Processing', 'Use 2nd detector').value()                     
+        self.pixMaps=self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)
+        print(np.min(self.pixMaps[2]),np.max(self.pixMaps[2]))
 
-        #we need the L values
-        grid_k, grid_l=np.mgrid[np.min(self.pixMaps[1]):np.max(self.pixMaps[1]):res*1j,np.min(self.pixMaps[2]):np.max(self.pixMaps[2]):res*1j]
-        xRoiData=self.ctrROI.getArrayRegion(grid_l, self.imgLeft)
-        qz = np.sum(xRoiData,axis=1)
-        print(qz)
-
-        np.savetxt(folderName+'/axis.csv',qz, delimiter=',',newline='\n') 
-        
+        xRoiData=self.ctrROI.getArrayRegion(np.rot90(self.pixMaps[2],3), self.imgLeft)
+        qz = np.mean(xRoiData,axis=1)  
+        np.savetxt(folderName+'/axis.csv',qz, delimiter=',',newline='\n')         
         for i in range(len(profiles)):
             fileName = str(folderName)+'/'+str(i)+'.csv'
             tmp2 = profiles[i]
             data = np.transpose([angles,tmp2])  
             np.savetxt(fileName,data, delimiter=',',newline='\n') 
 
-        print(i, "rocking scans saved in folder: ", folderName)
- 
-              
-
-    def extractrois(self):
-        options = QFileDialog.Options()
-        roifiles, _ = QFileDialog.getOpenFileNames(self,"Select ROIs to use", "","ROI Files (*.roi);;All Files (*)", options=options)
-        bkgroifiles, _ = QFileDialog.getOpenFileNames(self,"Select Background ROIs to use", "","ROI Files (*.roi);;All Files (*)", options=options)      
-        l_values =  np.array([])
-        i_values = np.array([])
-        bkg_values =np.array([])
-        if roifiles:
-            self.progressBar.setMaximum(len(roifiles))
-            for i in range(len(roifiles)):
-                self.progressBar.setValue(i)
-                self.update()
-                print(i+1,"/",str(),len(roifiles))
-                self.rawrefresh()
-                #load the roi
-                state = pickle.load(open(roifiles[i], "rb" ))
-                self.ctrROI.setState(state[0])
-                self.angleRegion.setRegion(state[1])
-                #calculate hkl and the roi again
-                self.makehkl()
-                self.ctrROICalc()
-                self.update()
-                #extract the profile                
-                i_values = np.append(i_values,self.roiydata)
-                l_values = np.append(l_values,self.roixdata)              
-                #now for the background
-                self.rawrefresh()
-                state = pickle.load(open(bkgroifiles[i], "rb" ))
-                self.ctrROI.setState(state[0])
-                self.angleRegion.setRegion(state[1])
-                self.makehkl()
-                self.ctrROICalc()
-                self.update()                
-                #keep the background subtracted values
-                bkg_values = np.append(bkg_values,self.roiydata)  
- 
-
-        y = i_values - bkg_values
-        x = l_values
-        fig = plt.figure(figsize=(5,5),dpi=300)        
-        plt.plot(x,y)
-        plt.show()
-        options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","csv (*.csv);;All Files (*)", options=options)  
-        data = np.vstack((x,y))
-        np.savetxt(fileName,np.transpose(data),fmt='%10.5f', delimiter=',',newline='\n')
+        print(i, "rocking scans saved in folder: ", folderName) 
          
-    def saveroi(self):
-        options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","roi (*.roi);;All Files (*)", options=options)     
-        if fileName:
-            state = [self.ctrROI.saveState(),self.angleRegion.getRegion()]
-            pickle.dump(state, open( fileName, "wb" ))   
+    def saveroi(self, paramHandle, filename=None):
+        if type(paramHandle) == str:
+            filename =  paramHandle
 
-    def loadroi(self):
-        options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileName(self,"Select a ROI file too use", "","ROI File (*.roi);;All Files (*)", options=options)
-        if fileName:
-            state = pickle.load(open(fileName, "rb" ))
+        if not filename:
+            options = QFileDialog.Options()
+            filename, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","roi (*.roi);;All Files (*)", options=options)     
+        if filename:
+            state = [self.ctrROI.saveState(),self.angleRegion.getRegion()]
+            pickle.dump(state, open(filename, "wb" ))   
+
+    def loadroi(self, paramHandle, filename=None):
+        if type(paramHandle) == str:
+            filename =  paramHandle
+
+        if not filename:
+            options = QFileDialog.Options()
+            filename, _ = QFileDialog.getOpenFileName(self,"Select a ROI file too use", "","ROI File (*.roi);;All Files (*)", options=options)
+        
+        if filename:
+            state = pickle.load(open(filename, "rb" ))
             self.ctrROI.setState(state[0])
-            self.angleRegion.setRegion(state[1])
-    
-    def roictr(self):
-        options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getOpenFileNames(self,"Select ROI files too use", "","ROI File (*.roi);;All Files (*)", options=options)
-        if fileName:
-            state = pickle.load(open(fileName, "rb" ))
-            self.ctrROI.setState(state[0])
-            self.angleRegion.setRegion(state[1])
+            #self.angleRegion.setRegion(state[1])    
 
     def load(self):
         if self.image_stack.images_read:
@@ -615,31 +616,107 @@ class Ram(QWidget):
             self.hist.setImageItem(self.imgLeft)   
             self.ImgState = 5
 
-    def makeFigure(self):
+    def makeFigure(self, paramHandle, filename=None):
+        if type(paramHandle) == str:
+            filename =  paramHandle
         """This function reloads plotting.py and runs the correct plotting function to
         generate a figure with matplotlib"""
+        if not filename:
+            options = QFileDialog.Options()
+            filename, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","png (*.png);;All Files (*)", options=options)     
 
-        options = QFileDialog.Options()
-        fileName, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","png (*.png);;All Files (*)", options=options)     
-        if fileName:
+        if filename:
             importlib.reload(plotting)
             if self.ImgState == 2:
                 cmin,cmax=self.imgLeft.getLevels()
-                plotting.plot_in_plane(self.grid_h,self.grid_k,self.showData,cmin,cmax, fileName)
-                print("In-plane map saved as: ",fileName)
+                self.grid_qy 
+                if projection == 0:
+                    plotting.plot_projection_hk(self, self.grid_qx,self.grid_qy,self.showData,cmin,cmax, filename)
+                    print("In-plane qx/qy map saved as: ",filename)
+                if projection == 1:
+                    plotting.plot_projection_hl(self, self.grid_qx,self.grid_qy,self.showData,cmin,cmax, filename)
+                    print("qx/qz map saved as: ",filename)
+                if projection == 2:
+                    plotting.plot_projection_kl(self, self.grid_qx,self.grid_qy,self.showData,cmin,cmax, filename)
+                    print("qy/qz map saved as: ",filename)
+                if projection == 3:
+                    plotting.plot_projection_qrl(self, self.grid_qx,self.grid_qy,self.showData,cmin,cmax, filename)
+                    print("qr/qz map saved as: ",filename)
             if self.ImgState == 1:
                 cmin,cmax=self.imgLeft.getLevels()
-                plotting.plot_out_of_plane(self.grid_hk,self.grid_l,self.showData,cmin,cmax, fileName)
-                print("Out-of-plane map saved as: ",fileName)
+                plotting.plot_transformed_detector(self.grid_hk,self.grid_l,self.showData,cmin,cmax, filename)
+                print("Transfomred Detector View saved as: ",filename)
             if self.ImgState == 0:
                 cmin,cmax=self.imgLeft.getLevels()
-                plotting.plot_out_of_plane(self.showData,cmin,cmax, fileName)
-                print("Image saved as: ",fileName)
+                plotting.plot_out_of_plane(self.showData,cmin,cmax, filename)
+                print("Image saved as: ",filename)
+                
+    def runScript(self):
+        importlib.reload(script)
+        script.script_main(self)
 
-  
+    def addMask(self): 
+        #when the button is pressed add a new ROI  
+        i = len(self.mask_list)     
+        self.mask_list.append(pg.RectROI([0, 5], [1, 1], pen=(i,9)))
+        self.mask_list[i].show()
+        self.p3.addItem(self.mask_list[i]) 
 
+    def convertMasks(self):
+        #this converts the ROIs into bounds for the binning algorithm
+        for mask in self.mask_list:
+            xmin = mask.pos()[0]
+            xmax = mask.size()[0] + xmin
+            ymin = mask.pos()[1]
+            ymax = mask.size()[1] + ymin
+            self.binBounds.append([xmin,xmax,ymin,ymax])  
 
+    def clearMasks(self):
+        self.binBounds = []   
+        for mask in self.mask_list:
+            self.p3.removeItem(mask)
+        self.mask_list = []
+    
+    def hideMasks(self): 
+        for mask in self.mask_list:
+            self.p3.removeItem(mask)
+    
+    def showMasks(self): 
+        for mask in self.mask_list:
+            self.p3.addItem(mask)
 
+    def saveMasks(self, paramHandle, filename=None):
+        if type(paramHandle) == str:
+            filename =  paramHandle
+        if not filename:
+            options = QFileDialog.Options()
+            filename, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","msk (*.msk);;All Files (*)", options=options)     
+        if filename:
+            mask_states = []
+            for mask in self.mask_list:
+                mask_states.append(mask.saveState())
+            pickle.dump(mask_states, open( filename, "wb" ))  
+            
+             
+    def loadMasks(self, paramHandle, filename=None): 
+        if type(paramHandle) == str:
+            filename =  paramHandle
+        if not filename:       
+            options = QFileDialog.Options()
+            filename, _ = QFileDialog.getOpenFileName(self,"Select a Mask file too use", "","Mask File (*.msk);;All Files (*)", options=options)
+        if filename:
+            mask_states = pickle.load(open(filename, "rb" ))
+            for mask_state in mask_states:
+                self.mask_list.append(pg.RectROI([0, 5], [1, 1], pen=(len(mask_states),9)))
+                self.mask_list[-1].setState(mask_state)
+                self.mask_list[-1].show()
+                self.p3.addItem(self.mask_list[-1])
+        self.convertMasks()            
+      
+    def makeProjection(self):    
+        self.binBounds = []          
+        self.convertMasks()
+        self.__makeProjection()
 
     def save(self):
         state = self.p.saveState()
@@ -671,17 +748,21 @@ class Ram(QWidget):
             {'name': 'Data Processing', 'type': 'group', 'children': [
                 {'name': 'Binning', 'type': 'int', 'value': 4, 'step': 1},
                 {'name': 'hkl Resolution', 'type': 'int', 'value': 1000, 'step': 1},
-                {'name': 'White background', 'type': 'bool', 'value': False},
-                {'name': 'Mean Images instead of Max', 'type': 'bool',},
-                {'name': 'Acceleration', 'type': 'list', 'values': {"none": 0, "numba (cpu)": 1, "cuda (gpu)": 2},'value': 0},
-                 {'name': 'Use 2nd detector', 'type': 'bool', 'value': False},                
-                {'name': 'Apply intensity corrections', 'type': 'bool', 'value': False},
-                {'name': 'Correct for refraction', 'type': 'bool', 'value': False},
-                {'name': 'Intensity offset', 'type': 'float', 'value': 0, 'step':10},
+                {'name': 'Divide Bins By Frequency', 'type': 'bool', 'value': True},
+                {'name': 'Grid Size', 'type': 'int', 'value': 800, 'step': 1},
+                {'name': 'White Background', 'type': 'bool', 'value': False},
+                {'name': 'Mean Images Instead of Max', 'type': 'bool',},
+                {'name': 'Acceleration', 'type': 'list', 'values': {"none": 0, "numba (cpu)": 1, "cuda (gpu)": 2},'value': 1},                    
+                {'name': 'Bin From Full Images', 'type': 'bool', 'value': False},             
+                {'name': 'Apply Intensity Corrections', 'type': 'bool', 'value': False},
+                {'name': 'Correct for Refraction', 'type': 'bool', 'value': False},
+                {'name': 'Intensity Offset', 'type': 'float', 'value': 0, 'step':10},
                 {'name': 'Multiply intensity by', 'type': 'float', 'value': 1, 'step':0.1},
                 {'name': 'Image Rotation', 'type': 'list', 'values': {"0 degrees": 0, "90 degrees": 1, "180 degrees": 2,"270 degrees": 3},'value': 0},
                 {'name': 'Image Flip U/D', 'type': 'list', 'values': {"True": True,"False": False},'value': False},
                 {'name': 'Image Flip L/R', 'type': 'list', 'values': {"True": True,"False": False},'value': False},
+                {'name': 'Use 2nd detector', 'type': 'bool', 'value': False}, 
+                {'name': 'Run Script', 'type': 'action'},
             ]},
             {'name': 'File', 'type': 'group', 'children': [  
                 {'name': 'Load', 'type': 'action'},
@@ -696,22 +777,26 @@ class Ram(QWidget):
             ]},
 
             {'name': 'View Mode', 'type': 'group', 'children': [             
-                {'name': 'Pixel Coordinates', 'type': 'action'},
-                {'name': 'Out-of-plane Map', 'type': 'action'},                
-                {'name': 'In-plane Map', 'type': 'action'},
+                {'name': 'Detector View', 'type': 'action'},
+                {'name': 'Transformed Detector View', 'type': 'action'},                
+                {'name': 'Binned Projection', 'type': 'action'},              
+                {'name': 'Select Projection', 'type': 'list', 'values': {"h-k": 0, "h-l": 1, "k-l": 2,"h^2+k^2 - l": 3},'value': 0},
                 {'name': 'Export Figure', 'type': 'action'},
 
             ]},
+            {'name': 'Recirpocal Space Masks', 'type': 'group', 'children': [             
+                {'name': 'Add Mask', 'type': 'action'},
+                {'name': 'Clear Masks', 'type': 'action'},                
+                {'name': 'Save Masks', 'type': 'action'},
+                {'name': 'Load Masks', 'type': 'action'},                                      
+            ]},
+
             {'name': 'Profile tools', 'type': 'group', 'children': [
                 {'name': 'Enable Box Profile', 'type': 'bool',},
                 {'name': 'Log profile', 'type': 'bool', 'value': True},
-                {'name': 'ROI Popout', 'type': 'action'},
-                #{'name': 'Export ROI as TIF', 'type': 'action'},
                 {'name': 'Extract profile', 'type': 'action'},
-                {'name': 'Save Rocking Scans', 'type': 'action'},
-                {'name': 'Extract CTR ROIs', 'type': 'action'},
-                #{'name': 'Batch Extract', 'type': 'action'},                
-                {'name': 'Axis of interest', 'type': 'list',  'values': {"H (Qx)": 1, "K (Qy)": 2, "HK (Qr)": 3,"L (qz)": 4}, 'value': 4} ,
+                {'name': 'Save Rocking Scans', 'type': 'action'},              
+                {'name': 'Axis of interest', 'type': 'list',  'values': {"H (Qx)": 1, "K (Qy)": 2, "HK (Qr)": 3,"L (qz)": 4}, 'value': 3} ,
                 {'name': 'Save ROI', 'type': 'action'},
                 {'name': 'Load ROI', 'type': 'action'},
             ]}
@@ -720,7 +805,7 @@ class Ram(QWidget):
 
         #p.param('Save/Restore functionality', 'Save State').sigActivated.connect(save)
         def toggleBg():
-            if self.p.param('Data Processing', 'White background').value():
+            if self.p.param('Data Processing', 'White Background').value():
                 win.setBackground('w')
             else:
                 win.setBackground('k')       
@@ -739,23 +824,29 @@ class Ram(QWidget):
         self.p.param('File', 'Load Parameters').sigActivated.connect(self.restore)
         self.p.param('File', 'Restore File Selection').sigActivated.connect(self.restoreImageStack)
 
-        self.p.param('View Mode', 'Pixel Coordinates').sigActivated.connect(self.rawrefresh)
-        self.p.param('View Mode', 'Out-of-plane Map').sigActivated.connect(self.makehkl)        
-        self.p.param('View Mode', 'In-plane Map').sigActivated.connect(self.makeInPlane)
+        self.p.param('View Mode', 'Detector View').sigActivated.connect(self.detectorMode)
+        self.p.param('View Mode', 'Transformed Detector View').sigActivated.connect(self.detectorTransform)        
+        self.p.param('View Mode', 'Binned Projection').sigActivated.connect(self.makeProjection) 
         self.p.param('View Mode', 'Export Figure').sigActivated.connect(self.makeFigure)
+       
 
 
-        self.p.param('Data Processing', 'White background').sigValueChanged.connect(toggleBg)
-        self.p.param('Data Processing', 'Mean Images instead of Max').sigValueChanged.connect(self.updateRegion)   
-        
-        self.p.param('Profile tools', 'ROI Popout').sigActivated.connect(self.roipop)
+        self.p.param('Data Processing', 'White Background').sigValueChanged.connect(toggleBg)
+        self.p.param('Data Processing', 'Mean Images Instead of Max').sigValueChanged.connect(self.updateRegion)
+        self.p.param('Data Processing', 'Run Script').sigActivated.connect(self.runScript)           
+
         self.p.param('Profile tools', 'Extract profile').sigActivated.connect(self.saveprofile)
         self.p.param('Profile tools', 'Save Rocking Scans').sigActivated.connect(self.saverocks)
-        self.p.param('Profile tools', 'Log profile').sigValueChanged.connect(self.ctrROICalc)  
-        self.p.param('Profile tools', 'Axis of interest').sigValueChanged.connect(self.ctrROICalc)  
-        self.p.param('Profile tools', 'Extract CTR ROIs').sigActivated.connect(self.extractrois)
+        self.p.param('Profile tools', 'Log profile').sigValueChanged.connect(self.ROICalc)  
+        self.p.param('Profile tools', 'Axis of interest').sigValueChanged.connect(self.ROICalc)  
         self.p.param('Profile tools', 'Save ROI').sigActivated.connect(self.saveroi)
         self.p.param('Profile tools', 'Load ROI').sigActivated.connect(self.loadroi) 
+
+        self.p.param('Recirpocal Space Masks', 'Add Mask').sigActivated.connect(self.addMask)
+        self.p.param('Recirpocal Space Masks', 'Clear Masks').sigActivated.connect(self.clearMasks)
+        self.p.param('Recirpocal Space Masks', 'Save Masks').sigActivated.connect(self.saveMasks)
+        self.p.param('Recirpocal Space Masks', 'Load Masks').sigActivated.connect(self.loadMasks)      
+
 
         self.experiment.param('Beamline Preset').sigValueChanged.connect(self.data_format_changed)
         self.crystal.param('Preset').sigValueChanged.connect(self.sample_preset)
@@ -824,19 +915,19 @@ class Ram(QWidget):
         self.CTRCurve=self.p4.plot()
         self.p.param('Profile tools', 'Enable Box Profile').sigValueChanged.connect(ctrROIClick)
         self.ctrROI.hide()
-        self.ctrROI.sigRegionChanged.connect(self.ctrROICalc)
+        self.ctrROI.sigRegionChanged.connect(self.ROICalc)
         self.p3.addItem(self.ctrROI)          
 
 
-        self.hist = pg.HistogramLUTItem()
+        self.hist = pg.HistogramLUTItem()        
         self.hist.setImageItem(self.imgLeft)
         self.hist.setMaximumWidth(200)
         win.addItem(self.hist,row=0,col=2)
         self.imgLeft.hoverEvent = self.imageHoverEvent   
+        self.mask_list = []
+        self.binBounds = []
         
-
-
         win.show()
         
-        self.setFixedSize(1920,1080)
+        #self.setFixedSize(1024,768)
         self.show() 

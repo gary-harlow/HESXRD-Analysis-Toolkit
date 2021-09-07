@@ -42,3 +42,4 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = interface.Ram()
     sys.exit(app.exec_())
+
