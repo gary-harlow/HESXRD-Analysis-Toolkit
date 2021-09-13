@@ -617,6 +617,7 @@ class Ram(QWidget):
             self.ImgState = 5
 
     def makeFigure(self, paramHandle, filename=None):
+        projection = self.p.param('View Mode', 'Select Projection').value()
         if type(paramHandle) == str:
             filename =  paramHandle
         """This function reloads plotting.py and runs the correct plotting function to

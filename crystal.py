@@ -475,7 +475,8 @@ class ExperimentParameter(pTypes.GroupParameter):
                         xbound = h
                         ybound = k
                         xcord = math.sqrt(h**2 + k**2)
-                        ycord = l
+                        ycord = l                       
+
 
                     #qr = math.sqrt(h**2 + k**2)*math.copysign(1,gam_pix)
                     for bound_index in range(len(bin_bounds)):                            
