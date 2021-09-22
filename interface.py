@@ -131,8 +131,14 @@ class Ram(QWidget):
             #if angluar range is small
             angles=np.linspace(start_angle-step_size,end_angle+step_size,number_of_images)
             tmp =self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)
-            qmax = np.max(tmp[3])+0.1
+            self.qmax = np.max(tmp[3])+0.1
             qzmax = np.max(tmp[2])+0.1
+
+            if qzmax > self.qmax:
+                self.qmax = qzmax
+            
+            qmax = self.qmax
+            
             grid_res = self.p.param('Data Processing', 'Grid Size').value()
             gridstep = (2*qmax/grid_res)
             

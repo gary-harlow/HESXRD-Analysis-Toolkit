@@ -191,7 +191,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                         Pver = 1 - math.sin(del_pix)**2
                         pol = p_h*Phor + (1-p_h)*Pver
                         #L= (math.sin(del_pix)*math.cos(angi))*math.copysign(1,del_pix)    
-                        L=math.sin(gam_pix)*math.cos(del_pix)*math.cos(angi)                         
+                        L=math.sin(gam_pix)*math.cos(del_pix)*math.cos(angi)*math.copysign(1,gam_pix)                            
                         Cd = dist**2/SDD**2    
                         Ci = 1/math.cos(math.atan(delR/SDD))                            
                         Crod = (math.sin(angi-gam_pix)**2 * math.cos(del_pix) + math.cos(angi)*math.cos(angi-gam_pix))/math.cos(angi)         
@@ -282,7 +282,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                             Phor = 1- (np.cos(del_pix)*np.sin(gam_pix))**2
                             Pver = 1 - np.sin(del_pix)**2
                             pol = p_h*Phor + (1-p_h)*Pver   
-                            L=math.sin(gam_pix)*math.cos(del_pix)*math.cos(angi) 
+                            L=math.sin(gam_pix)*math.cos(del_pix)*math.cos(angi)*math.copysign(1,gam_pix)      
                             Cd = dist**2/SDD**2
                             Ci = 1/np.cos(math.atan(delR/SDD))                            
                             Crod = (np.sin(angi-gam_pix)**2 * np.cos(del_pix) + np.cos(angi)*np.cos(angi-gam_pix))/np.cos(angi)              
@@ -381,9 +381,8 @@ class ExperimentParameter(pTypes.GroupParameter):
         gridsize=int(window.p.param('Data Processing', 'Grid Size').value())
         index_offset = int(math.ceil(gridsize/2))
         #currently it is just a square grid so it needs to be big enough
-        if projection != 0:
-            if qzmax > qxymax:
-                qxymax = qzmax
+        if qzmax > qxymax:
+            qxymax = qzmax
         invgridstepx = 1/(2*qxymax/gridsize)       
         invgridstepy = 1/(2*qxymax/gridsize)   
  
@@ -610,8 +609,8 @@ class ExperimentParameter(pTypes.GroupParameter):
                                     histx = int(round(xcord*invgridstepx))+index_offset
                                     histy = int(round(ycord*invgridstepy))+index_offset  
                                     intensity = image[row,col]*cfac
-                                    hist[histy][histx] += intensity
-                                    weights[histy][histx] += 1
+                                    hist[histx][histy] += intensity
+                                    weights[histx][histy] += 1
 
                 return hist,weights  
 
@@ -630,12 +629,12 @@ class ExperimentParameter(pTypes.GroupParameter):
             for i, angle in enumerate(angles): 
                 print("Calculating angle ",i, " = ", angle)
                 if use_raw_files:           
-                    image = np.rot90(window.image_stack.get_image_unbinned(i+from_image))
+                    image = np.rot90(window.image_stack.get_image_unbinned(i+from_image))   
 
-                    image_bin,image_weights = binner(image,np.deg2rad(angle))
                 else:
                     image = np.rot90(imagedata[i])
-                    image_bin,image_weights = binner(image,np.deg2rad(angle))
+
+                image_bin,image_weights = binner(image,np.deg2rad(angle))
 
                 final_hist= final_hist + image_bin
                 final_weights = final_weights + image_weights

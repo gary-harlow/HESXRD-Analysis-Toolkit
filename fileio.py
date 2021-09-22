@@ -436,6 +436,8 @@ class ImageStack():
                 self.start_angle=all_angles[-1]
                 self.end_angle=all_angles[0]  
                 self.image_data = np.flip(self.image_data, axis=0)  
+                self.image_file_names_1 = np.flip(self.image_file_names_1)  
+                self.image_file_names_2 = np.flip(self.image_file_names_2)  
 
         if self.beamline == 4:  
             all_angles = np.asarray(self.hdf5_file['/'+self.scanno+'/measurement/th/'])
