@@ -16,6 +16,7 @@ import hdf5plugin
 import pickle
 import util
 from scipy import interpolate
+import copy
 
 
 class ImageStack():
@@ -137,7 +138,9 @@ class ImageStack():
             #not quite sure how to do the same binning trick on 3d datasets
             #also don't really want to load the whole unbinned dataset into memory
             dset = (self.hdf5_file[self.scan_name]) 
-            self.number_of_images = dset.len()          
+            self.number_of_images = dset.len()   
+            #if the image is rotated 90 or 270 degrees then the x and y sizes swap
+
             self.image_data=np.zeros([self.number_of_images,self.x_size2,self.y_size])
             for i in range(self.number_of_images):               
                 self.image_data[i] = self.multiply*self.__flip(np.rot90(util.rebin(np.asarray(dset[i]),int(self.binning)), self.rotation)/self.monitor[i])+self.offset
@@ -357,7 +360,7 @@ class ImageStack():
                     after_gap = self.x_size + int(self.gap/self.binning)
                     self.image_data[i,after_gap:self.x_size2,0:self.y_size]=self.__load_image(filename)-self.subtract_image[after_gap:self.x_size2,0:self.y_size]
 
-            if self.log_file_name:
+            if self.log_file_name or self.beamline == 5:
                 self.__process_log_file()
 
             self.window.progressBar.setValue(i+1)
@@ -395,6 +398,7 @@ class ImageStack():
             print("Not available for this experiment metadata is extracted automatically")
 
     def __process_log_file(self):
+        self.__update_params()
         """Calls reads in the log file depending on the beamline"""
         if self.beamline == 2:   
             first_file_name_number=str(sorted(self.image_file_names_1)[0]).split('/')[-1]
@@ -449,9 +453,12 @@ class ImageStack():
                 self.start_angle=all_angles[-1]
                 self.end_angle=all_angles[0]
                 self.image_data = np.flip(self.image_data, axis=0) 
+        if self.beamline == 5:
+            self.start_angle= float(self.window.p.param('Experiment', 'Manual Start Angle').value())
+            self.end_angle= float(self.window.p.param('Experiment', 'Manual End Angle').value())
 
         self.angle2image=interpolate.interp1d((self.start_angle,self.end_angle),(0,self.number_of_images))
-        self.angle_mode = True
+        self.angle_mode = True 
 
     def max_example_3d(result, values):
         """

@@ -298,6 +298,10 @@ class Ram(QWidget):
         """Simple function to change file to make scripting cleaner, not used internally"""
         self.p.param('Profile tools', 'Log profile').setValue(value)
 
+    def setBinning(self, value):
+        """Simple function to change file to make scripting cleaner, not used internally"""
+        self.p.param('Data Processing', 'Binning').setValue(value)
+
     def enableProfile(self, value):
         """Simple function to change file to make scripting cleaner, not used internally"""
         self.p.param('Profile tools', 'Enable Box Profile').setValue(value)
@@ -484,7 +488,26 @@ class Ram(QWidget):
             #There was no 2nd detector and dark images subtracted normaly 
             self.p.param('Data Processing', 'Use 2nd detector').hide()
             self.p.param('File', 'Select Dark Image').hide()
-            self.p.param('File', 'Select Background Dark Image').hide()
+            self.p.param('File', 'Select Background Dark Image').hide()   
+
+        #P21.2 Beamline
+        if self.experiment.param('Beamline Preset').value() == 1 or self.experiment.param('Beamline Preset').value() == 2:  
+            self.p.param('Experiment', 'Y Pixels').setValue(2880)
+            self.p.param('Experiment', 'X Pixels').setValue(2880)
+            self.p.param('Experiment', 'Pixel Size').setValue(150e-6)
+
+        if self.experiment.param('Beamline Preset').value() == 5:
+            self.experiment.param('Manual Start Angle').show()
+            self.experiment.param('Manual End Angle').show()
+            #self.p.param('File', 'Select Dark Image').show()
+            #self.p.param('Data Processing', 'Use 2nd detector').show()  
+            #self.p.param('File', 'Select Background Dark Image').show()
+            self.p.param('File', 'Select Log File').hide()
+        else:
+            self.experiment.param('Manual Start Angle').hide()
+            self.experiment.param('Manual End Angle').hide()
+
+
     
     def sample_preset(self):
         """Apply presets for sample if changed, eventually this should be read from a text file"""
@@ -523,9 +546,9 @@ class Ram(QWidget):
 
         if not filename:
             options = QFileDialog.Options()
-            fileName, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","csv (*.csv);;All Files (*)", options=options)  
+            filename, _ = QFileDialog.getSaveFileName(self,"Chose file name", "","csv (*.csv);;All Files (*)", options=options)  
         data = np.asarray([self.roixdata,self.roiydata])
-        np.savetxt(fileName,np.transpose(data),fmt='%10.5f', delimiter=',',newline='\n')       
+        np.savetxt(filename,np.transpose(data),fmt='%10.5f', delimiter=',',newline='\n')       
 
     def saverocks(self, paramHandle, folderName=None):
         if type(paramHandle) == str:
@@ -933,7 +956,7 @@ class Ram(QWidget):
         self.imgLeft.hoverEvent = self.imageHoverEvent   
         self.mask_list = []
         self.binBounds = []
-        
+        self.data_format_changed()
         win.show()
         
         #self.setFixedSize(1024,768)

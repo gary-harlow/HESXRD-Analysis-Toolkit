@@ -139,7 +139,7 @@ class ExperimentParameter(pTypes.GroupParameter):
         acceleration=window.p.param('Data Processing', 'Acceleration').value() 
         correct_refraction=window.p.param('Data Processing', 'Correct for Refraction').value() 
         correct=window.p.param('Data Processing', 'Apply Intensity Corrections').value()
-        angi_c = np.deg2rad(self.param('Critical Angle').value()*binning)
+        angi_c = np.deg2rad(self.param('Critical Angle').value())
         if twodetectors:
             pixel_count_x=int((2*self.param('X Pixels').value()+self.param('Detector Gap (pixels)').value())/binning)
         pixel_x=self.param('Pixel Size').value()*binning
@@ -198,22 +198,21 @@ class ExperimentParameter(pTypes.GroupParameter):
                         qz = kzf - kzi       
 
                     if correct:
-
                         cos_del = math.cos(del_pix)
                         sin_del = math.sin(abs(del_pix))                           
                         #Corrections for 2+2 geometery in horizontal mode
-                        #P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
-                        #P_vert  = 1 - sin_del*sin_del
-                        #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
+                        P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
+                        P_vert  = 1 - sin_del*sin_del
+                        pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
                         #Carea = sin_gam/cos_beta
-                        #Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
+                        Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
 
                         #z-axis
-                        P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
-                        P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
-                        pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
-                        Carea = math.sin(gam_pix)
-                        Crod = 1./cos_del
+                        #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
+                        #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
+                        #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
+                        #Carea = math.sin(gam_pix)
+                        #Crod = 1./cos_del
 
                         Cd = dist**2/SDD**2    
                         Ci = 1./math.cos(math.atan(delR/SDD)) 
@@ -222,7 +221,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                         else:
                             Lor = sin_gam*cos_alpha                      
                       
-                        c_glob[row,col] = abs(pol*Carea*Cd*Ci*Lor*Crod)
+                        c_glob[row,col] = abs(pol*Cd*Ci*Lor*Crod)
 
                     else:
                         c_glob[row,col] = 1                 
@@ -316,22 +315,21 @@ class ExperimentParameter(pTypes.GroupParameter):
                             qz = kzf - kzi       
 
                         if correct:
-
                             cos_del = math.cos(del_pix)
                             sin_del = math.sin(abs(del_pix))                           
                             #Corrections for 2+2 geometery in horizontal mode
-                            #P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
-                            #P_vert  = 1 - sin_del*sin_del
-                            #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
+                            P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
+                            P_vert  = 1 - sin_del*sin_del
+                            pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
                             #Carea = sin_gam/cos_beta
-                            #Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
+                            Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
 
                             #z-axis
-                            P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
-                            P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
-                            pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
-                            Carea = math.sin(gam_pix)
-                            Crod = 1./cos_del
+                            #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
+                            #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
+                            #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
+                            #Carea = math.sin(gam_pix)
+                            #Crod = 1./cos_del
 
                             Cd = dist**2/SDD**2    
                             Ci = 1./math.cos(math.atan(delR/SDD)) 
@@ -340,7 +338,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                             else:
                                 Lor = sin_gam*cos_alpha                      
                         
-                            c_img[row][col] = Lor*Crod*Cd*pol*Ci*Carea
+                            c_img[row][col] = Lor*Crod*Cd*pol*Ci
 
                         else:
                             c_img[row][col] = 1      
@@ -488,22 +486,22 @@ class ExperimentParameter(pTypes.GroupParameter):
                         cos_del = math.cos(del_pix)
                         sin_del = math.sin(abs(del_pix))                           
                         #Corrections for 2+2 geometery in horizontal mode
-                        #P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
-                        #P_vert  = 1 - sin_del*sin_del
-                        #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
+                        P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
+                        P_vert  = 1 - sin_del*sin_del
+                        pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
                         #Carea = sin_gam/cos_beta
                         #Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
 
                         #z-axis
-                        P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
-                        P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
-                        pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
-                        Carea = math.sin(gam_pix)
-                        Crod = 1./cos_del
+                        #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
+                        #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
+                        #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
+                        #Carea = math.sin(gam_pix)
+                        #Crod = 1./cos_del
 
                         Cd = dist**2/SDD**2    
                         Ci = 1./math.cos(math.atan(delR/SDD)) 
-                        correction[row,col] = abs(pol*Cd*Ci*Carea*Crod)
+                        correction[row,col] = abs(pol*Cd*Ci)
                     else:
                         correction[row,col] = 1   
 
@@ -573,7 +571,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                                 cuda.atomic.add(histogram_weights,(histx,histy),1)
 
             # Configure the blocks
-            threadsperblock = (32, 8)
+            threadsperblock = (32, 8) #could be moved to setting or config file
             blockspergrid_x = int(math.ceil(pixel_count_y / threadsperblock[0]))
             blockspergrid_y = int(math.ceil(pixel_count_x / threadsperblock[1]))
             blockspergrid = (blockspergrid_x, blockspergrid_y)   
@@ -643,28 +641,28 @@ class ExperimentParameter(pTypes.GroupParameter):
                             qz = kzf - kzi       
 
                         if correct:
-
                             cos_del = math.cos(del_pix)
                             sin_del = math.sin(abs(del_pix))                           
                             #Corrections for 2+2 geometery in horizontal mode
-                            #P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
-                            #P_vert  = 1 - sin_del*sin_del
-                            #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
+                            P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
+                            P_vert  = 1 - sin_del*sin_del
+                            pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
                             #Carea = sin_gam/cos_beta
                             #Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
 
                             #z-axis
-                            P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
-                            P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
-                            pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
-                            Carea = math.sin(gam_pix)
-                            Crod = 1./cos_del
+                            #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
+                            #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
+                            #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
+                            #Carea = math.sin(gam_pix)
+                            #Crod = 1./cos_del
 
-                            Cd = dist**2/SDD**2    
+                            Cd = dist**2/SDD**2 
                             Ci = 1./math.cos(math.atan(delR/SDD)) 
-                            cfac = abs(pol*Cd*Ci*Carea*Crod)                                                
+                            cfac = abs(pol*Cd*Ci)                                                      
                         else:
                             cfac = 1
+
 
                         so = np.sin(rotDirection*(omega_rad+angle))
                         co = np.cos(rotDirection*(omega_rad+angle))
@@ -721,7 +719,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                                 if ybound > bounds[bound_index][2] and ybound < bounds[bound_index][3]:                         
                                     histx = int(round(xcord*invgridstepx))+index_offset
                                     histy = int(round(ycord*invgridstepy))+index_offset  
-                                    intensity = image[row,col]*cfac
+                                    intensity = image[row][col]*cfac
                                     hist[histx][histy] += intensity
                                     weights[histx][histy] += 1
 
@@ -730,7 +728,7 @@ class ExperimentParameter(pTypes.GroupParameter):
             #use numba on cpu instead
             if acceleration == 1:
                 if "jit" not in sys.modules:                
-                    from numba import jit
+                    from numba import jit                        
                 binner = jit(_binner,nopython=True)
             else:
                 print("Not even Numba ...  reeallly sloooww")
@@ -738,17 +736,15 @@ class ExperimentParameter(pTypes.GroupParameter):
 
             final_hist = np.zeros((gridsize,gridsize),dtype=np.single)
             final_weights = np.zeros((gridsize,gridsize),dtype=np.single) 
-            
+
             for i, angle in enumerate(angles): 
                 print("Calculating angle ",i, " = ", angle)
                 if use_raw_files:           
-                    image = np.rot90(window.image_stack.get_image_unbinned(i+from_image))   
-
+                    image = np.rot90(window.image_stack.get_image_unbinned(i+from_image))  
                 else:
-                    image = np.rot90(imagedata[i])
+                    image = np.rot90(imagedata[i])    
 
                 image_bin,image_weights = binner(image,np.deg2rad(angle))
-
                 final_hist= final_hist + image_bin
                 final_weights = final_weights + image_weights
 
@@ -757,6 +753,7 @@ class ExperimentParameter(pTypes.GroupParameter):
             else:
                 hist2=final_hist
             return hist2    
+
 
     def getLambda(self,energy):
         h=6.62607004e-34
@@ -791,7 +788,9 @@ class ExperimentParameter(pTypes.GroupParameter):
         self.addChild({'name': 'Angle of Incidence', 'type': 'float', 'value': 0.07, 'suffix': '°', 'step': 0.001,'suffixGap': ''})
         self.addChild({'name': 'Axis directon', 'type': 'list', 'values': {"Positive": 1, "Negative": -1}, 'value': -1})
         self.addChild({'name': 'Angle offset', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
-        self.addChild({'name': 'Beamline Preset', 'type': 'list', 'values': {"P21.2 1": 1, "P21.2 2": 2, "P07 2019": 3,"ID31 HDF5": 4},'value': 1})
+        self.addChild({'name': 'Beamline Preset', 'type': 'list', 'values': {"P21.2 1": 1, "P21.2 2": 2, "P07 2019": 3,"ID31 HDF5": 4,"Manual": 5},'value': 1})
+        self.addChild({'name': 'Manual Start Angle', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
+        self.addChild({'name': 'Manual End Angle', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
 
         self.energy = self.param('Energy')
         self.wavelength = self.param('Wavelength')
