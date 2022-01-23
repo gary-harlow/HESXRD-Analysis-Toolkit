@@ -54,7 +54,7 @@ class CrystallographyParameters(pTypes.GroupParameter):
         self.addChild({'name': 'β₁', 'type': 'float', 'value': 90,'suffix': '°','suffixGap': ''})
         self.addChild({'name': 'β₂', 'type': 'float', 'value': 90,'suffix': '°','suffixGap': ''})
         self.addChild({'name': 'β₃', 'type': 'float', 'value': 90,'suffix': '°','suffixGap': ''})
-        self.addChild({'name': 'Reciprical Units', 'type': 'list', 'values': {"Q": 0, "HKL": 1}, 'value':1})
+        self.addChild({'name': 'Reciprocal Units', 'type': 'list', 'values': {"Q": 0, "HKL": 1}, 'value':1})
 
         self.a1=self.param('a₁')
         self.a2=self.param('a₂')
@@ -154,7 +154,7 @@ class ExperimentParameter(pTypes.GroupParameter):
         beta3 = window.crystal.param('β₃').value()
         b1=window.crystal.param('b₁').value()
         b2=window.crystal.param('b₂').value()
-        recp_units=window.crystal.param('Reciprical Units').value()
+        recp_units=window.crystal.param('Reciprocal Units').value()
         sin_crtical_angle = math.sin(angi_c)    
         cos_alpha = math.cos(angi)
         sin_alpha = math.sin(angi)  
@@ -387,7 +387,7 @@ class ExperimentParameter(pTypes.GroupParameter):
         tmp = np.array(detector_frame_to_hkl())
         return (tmp)  
 
-    def projection_binner(self,window,binning,twodetectors,angles,imagedata,qxymax,qzmax):
+    def projection_binner(self,window,binning,twodetectors,angles,imagedata, qxymax, progress_callback):
         angi=np.deg2rad(self.param('Angle of Incidence').value())
         cos_alpha = math.cos(angi)
         sin_alpha = math.sin(angi)  
@@ -420,8 +420,8 @@ class ExperimentParameter(pTypes.GroupParameter):
         correct_refraction=window.p.param('Data Processing', 'Correct for Refraction').value()
         correct=window.p.param('Data Processing', 'Apply Intensity Corrections').value()
         bounds = np.asarray(window.binBounds,dtype=np.single)
-        projection=window.p.param('View Mode', 'Select Projection').value()
-        norm_hist=window.p.param('Data Processing', 'Divide Bins By Frequency').value() 
+        projection=window.p.param('Data Processing', 'Select Projection').value()
+        norm_hist=True
         
         angi_c = np.deg2rad(self.param('Critical Angle').value())      
         sin_crtical_angle = math.sin(angi_c)    
@@ -432,13 +432,11 @@ class ExperimentParameter(pTypes.GroupParameter):
         k0=(np.pi*2)/self.param('Wavelength').value()
         p_h=self.param('Horizontal Polarisation').value()
         Binv=window.crystal.calcBInv()
-        recp_units=window.crystal.param('Reciprical Units').value()
+        recp_units=window.crystal.param('Reciprocal Units').value()
         
         gridsize=int(window.p.param('Data Processing', 'Grid Size').value())
         index_offset = int(math.ceil(gridsize/2))
-        #currently it is just a square grid so it needs to be big enough
-        if qzmax > qxymax:
-            qxymax = qzmax
+        #currently it is just a square grid so it needs to be big enough        
         invgridstepx = 1/(2*qxymax/gridsize)       
         invgridstepy = 1/(2*qxymax/gridsize)   
  
@@ -592,16 +590,19 @@ class ExperimentParameter(pTypes.GroupParameter):
                 else:
                     tmp = np.ascontiguousarray(np.rot90(imagedata[i]))
                 imagei = cuda.to_device(tmp)  
-                print("Calculating angle ",i, " = ", angle)  
-                _bin_kernel[blockspergrid, threadsperblock](imagei, np.deg2rad(angle), histogram_result, histogram_weights,bounds, qx_vals, qy_vals, qz_vals,corrections)          
-            #normalise histogram
-            #cuda.synchronize()    
-            hist = np.asarray(histogram_result.copy_to_host())     
+                window.statusLabel.setText("Calculating angle "+str(i)+" = "+str(angle))  
+                _bin_kernel[blockspergrid, threadsperblock](imagei, np.deg2rad(angle), histogram_result, histogram_weights,bounds, qx_vals, qy_vals, qz_vals,corrections)
+                if window.single_thread == False:
+                    progress_callback.emit(i)  
+                else:
+                    window.progressBar.setValue(i) 
+                    window.processEvents()       
+
+            hist = np.asarray(histogram_result.copy_to_host()) 
+
+            #normalise the histogram   
             weight = np.asarray(histogram_weights.copy_to_host())     
-            if norm_hist:
-                hist2 = np.divide(hist, weight, where=weight!=0)                
-            else:
-                hist2=hist
+            hist2 = np.divide(hist, weight, where=weight!=0)                   
             return hist2
 
         else:     
@@ -731,27 +732,30 @@ class ExperimentParameter(pTypes.GroupParameter):
                     from numba import jit                        
                 binner = jit(_binner,nopython=True)
             else:
-                print("Not even Numba ...  reeallly sloooww")
+                print("This is probably really slow, you should try Numba or even better the GPU mode")
                 binner =_binner
 
             final_hist = np.zeros((gridsize,gridsize),dtype=np.single)
             final_weights = np.zeros((gridsize,gridsize),dtype=np.single) 
 
             for i, angle in enumerate(angles): 
-                print("Calculating angle ",i, " = ", angle)
+                window.statusLabel.setText("Calculating angle "+str(i)+" = "+str(angle))  
                 if use_raw_files:           
                     image = np.rot90(window.image_stack.get_image_unbinned(i+from_image))  
                 else:
-                    image = np.rot90(imagedata[i])    
+                    image = np.rot90(imagedata[i])                    
 
                 image_bin,image_weights = binner(image,np.deg2rad(angle))
                 final_hist= final_hist + image_bin
                 final_weights = final_weights + image_weights
 
-            if norm_hist:
-                hist2 = np.divide(final_hist, final_weights, where=final_weights!=0)                
-            else:
-                hist2=final_hist
+                if window.single_thread == False:
+                    progress_callback.emit(i)  
+                else:
+                    window.progressBar.setValue(i) 
+                    window.processEvents()      
+
+            hist2 = np.divide(final_hist, final_weights, where=final_weights!=0)               
             return hist2    
 
 
@@ -788,7 +792,7 @@ class ExperimentParameter(pTypes.GroupParameter):
         self.addChild({'name': 'Angle of Incidence', 'type': 'float', 'value': 0.07, 'suffix': '°', 'step': 0.001,'suffixGap': ''})
         self.addChild({'name': 'Axis directon', 'type': 'list', 'values': {"Positive": 1, "Negative": -1}, 'value': -1})
         self.addChild({'name': 'Angle offset', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
-        self.addChild({'name': 'Beamline Preset', 'type': 'list', 'values': {"P21.2 1": 1, "P21.2 2": 2, "P07 2019": 3,"ID31 HDF5": 4,"Manual": 5},'value': 1})
+        self.addChild({'name': 'Beamline Preset', 'type': 'list', 'values': {"P21.2 1": 1, "P21.2 2": 2, "P07 2019": 3,"ID31 HDF5": 4,"Manual": 5,"P07 2021":6},'value': 1})
         self.addChild({'name': 'Manual Start Angle', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
         self.addChild({'name': 'Manual End Angle', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
 

@@ -9,14 +9,83 @@ from PyQt5.QtWidgets import QApplication, QWidget, QInputDialog, QLineEdit, QFil
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QLabel, QGridLayout, QWidget,QPushButton,QInputDialog,QListWidget,QListWidgetItem
-from PyQt5.QtCore import QSize, Qt    
+from PyQt5.QtCore import QSize, Qt, QObject, QThread, pyqtSignal,QRunnable,pyqtSlot,QThreadPool
 import fabio
-import h5py
-import hdf5plugin
+#import h5py
+#import hdf5plugin
 import pickle
 import util
 from scipy import interpolate
 import copy
+from time import sleep
+import traceback,sys
+
+class WorkerSignals(QObject):
+    '''
+    Defines the signals available from a running worker thread.
+
+    Supported signals are:
+
+    finished
+        No data
+
+    error
+        tuple (exctype, value, traceback.format_exc() )
+
+    result
+        object data returned from processing, anything
+
+    progress
+        int indicating % progress
+
+    '''
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    result = pyqtSignal(object)
+    progress = pyqtSignal(int)
+
+class Worker(QRunnable):
+    '''
+    Worker thread
+
+    Inherits from QRunnable to handler worker thread setup, signals and wrap-up.
+
+    :param callback: The function callback to run on this worker thread. Supplied args and
+                     kwargs will be passed through to the runner.
+    :type callback: function
+    :param args: Arguments to pass to the callback function
+    :param kwargs: Keywords to pass to the callback function
+    '''
+
+    def __init__(self, fn, *args, **kwargs):
+        super(Worker, self).__init__()
+
+        # Store constructor arguments (re-used for processing)
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+
+        # Add the callback to our kwargs
+        self.kwargs['progress_callback'] = self.signals.progress
+
+    @pyqtSlot()
+    def run(self):
+        '''
+        Initialise the runner function with passed args, kwargs.
+        '''
+
+        # Retrieve args/kwargs here; and fire processing using them
+        try:
+            result = self.fn(*self.args, **self.kwargs)
+        except:
+            traceback.print_exc()
+            exctype, value = sys.exc_info()[:2]
+            self.signals.error.emit((exctype, value, traceback.format_exc()))
+        else:
+            self.signals.result.emit(result)  # Return the result of the processing
+        finally:
+            self.signals.finished.emit()  # Done
 
 
 class ImageStack():
@@ -95,7 +164,7 @@ class ImageStack():
 
         self.offset = self.window.p.param('Data Processing', 'Intensity Offset').value() 
         self.multiply = self.window.p.param('Data Processing', 'Multiply intensity by').value() 
-        self.binning=int(self.window.p.param('Data Processing', 'Binning').value())
+        self.binning=int(self.window.p.param('Data Processing', 'Binning (X by X)').value())
 
         #image sizes
         self.xSize=int(self.window.p.param('Experiment', 'X Pixels').value())
@@ -104,7 +173,8 @@ class ImageStack():
         self.gap = int(self.window.p.param('Experiment','Detector Gap (pixels)').value())        
         self.two_detectors = self.window.p.param('Data Processing', 'Use 2nd detector').value()
         self.mean =  self.window.p.param('Data Processing', 'Mean Images Instead of Max').value()
-       
+        self.subtract_bak_image_box =  self.window.p.param('Data Processing', 'Perform Background Subtraction').value()
+      
         #these are the binned sizes
         extra_x = util.add_to_divide(self.xSize,self.binning)
         extra_y = util.add_to_divide(self.ySize,self.binning)
@@ -126,13 +196,14 @@ class ImageStack():
 
     def __load_image(self,file_name, nobin=False):
         self.__update_params()
-        if self.beamline != 4:           
-            print("File loaded: ",file_name)
+        if self.beamline != 4:                     
+            text = "File loaded: "+str(file_name)
+            self.window.statusLabel.setText(text) 
             #we load the image and bin,rotate,flip, multiply and offset as neeeded
             if nobin:
-                return self.multiply*self.__flip(np.rot90(np.asarray(fabio.open(file_name).data), self.rotation))+self.offset
+                return self.__flip(np.rot90(np.asarray(fabio.open(file_name).data), self.rotation))
             else:
-                return self.multiply*self.__flip(np.rot90(util.rebin(np.asarray(fabio.open(file_name).data),int(self.binning)), self.rotation))+self.offset
+                return self.__flip(np.rot90(util.rebin(np.asarray(fabio.open(file_name).data),int(self.binning)), self.rotation))
         else:
             #for HDF5 FILES
             #not quite sure how to do the same binning trick on 3d datasets
@@ -143,7 +214,30 @@ class ImageStack():
 
             self.image_data=np.zeros([self.number_of_images,self.x_size2,self.y_size])
             for i in range(self.number_of_images):               
-                self.image_data[i] = self.multiply*self.__flip(np.rot90(util.rebin(np.asarray(dset[i]),int(self.binning)), self.rotation)/self.monitor[i])+self.offset
+                self.image_data[i] = self.__flip(np.rot90(util.rebin(np.asarray(dset[i]),int(self.binning)), self.rotation)/self.monitor[i])
+            return self.image_data
+
+    def pubload_image(self,file_name, nobin=False):
+        self.__update_params()
+        if self.beamline != 4:                     
+            text = "File loaded: "+str(file_name)
+            self.window.statusLabel.setText(text) 
+            #we load the image and bin,rotate,flip, multiply and offset as neeeded
+            if nobin:
+                return self.__flip(np.rot90(np.asarray(fabio.open(file_name).data), self.rotation))
+            else:
+                return self.__flip(np.rot90(util.rebin(np.asarray(fabio.open(file_name).data),int(self.binning)), self.rotation))
+        else:
+            #for HDF5 FILES
+            #not quite sure how to do the same binning trick on 3d datasets
+            #also don't really want to load the whole unbinned dataset into memory
+            dset = (self.hdf5_file[self.scan_name]) 
+            self.number_of_images = dset.len()   
+            #if the image is rotated 90 or 270 degrees then the x and y sizes swap
+
+            self.image_data=np.zeros([self.number_of_images,self.x_size2,self.y_size])
+            for i in range(self.number_of_images):               
+                self.image_data[i] = self.__flip(np.rot90(util.rebin(np.asarray(dset[i]),int(self.binning)), self.rotation)/self.monitor[i])
             return self.image_data
 
     def get_image_unbinned(self,image_index):             
@@ -156,7 +250,7 @@ class ImageStack():
             else:
                 unbinned_x_size = self.xSize 
             #we load the image and bin,rotate,flip, multiply and offset as neeeded       
-            mon = (self.multiply*self.monitor[image_index]+self.offset)  
+            mon = (self.monitor[image_index])  
             img1 = self.__load_image(file_name, nobin=True) / mon
             image_data = np.zeros([unbinned_x_size,self.ySize])            
             
@@ -167,25 +261,27 @@ class ImageStack():
                 img2 = img1 = self.__load_image(file_name_2, nobin=True) / mon      
                 image_data[(self.xSize + self.gap):unbinned_x_size,:] += img2    
           
-            return image_data - self.full_subtract_image*(self.multiply*self.monitor[image_index]+self.offset)           
+            return image_data - self.full_subtract_image*(self.monitor[image_index])           
         else:
             #for HDF5 FILES
             #not quite sure how to do the same binning trick on 3d datasets
             #also don't really want to load the whole unbinned dataset into memory
             dset = (self.hdf5_file[self.scan_name]) 
             print(image_index)
-            return self.multiply*self.__flip(np.rot90(np.asarray(dset[image_index]), self.rotation)/self.monitor[image_index])+self.offset
+            return self.__flip(np.rot90(np.asarray(dset[image_index]), self.rotation)/self.monitor[image_index])
 
     def __select_aux_image(self,description,dictionary_prefix,filename=None, filename2=None):
         """Selection dialogs for backround and dark images"""
         self.__update_params()
         if self.beamline == 4:  
-            print("This needs implementing")
-        else:
+            text ="Not available for this experiment metadata is extracted automatically"
+            self.window.statusLabel.setText(text)             
+        else:            
             self.__update_params()
+            print(description,dictionary_prefix)
             if not filename:
                 options = QFileDialog.Options()
-                self.aux_file_names[dictionary_prefix + ' 1'], _ = QFileDialog.getOpenFileName(self.window, description +' 1',"","TIFF File (*.tif);;All Files (*)", options=options) 
+                self.aux_file_names[dictionary_prefix + ' 1'], _ = QFileDialog.getOpenFileName(self.window, description +' 1',"","TIFF/CBF Files (*.tif);;All Files (*)", options=options) 
             else:
                 self.aux_file_names[dictionary_prefix + ' 1'] = filename
 
@@ -195,7 +291,7 @@ class ImageStack():
             #For 2nd detector
             if self.two_detectors:
                 if not filename2:
-                    self.aux_file_names[dictionary_prefix + ' 2'], _ = QFileDialog.getOpenFileName(self.window, description +' 2',"","TIFF File (*.tif);;All Files (*)", options=options)   
+                    self.aux_file_names[dictionary_prefix + ' 2'], _ = QFileDialog.getOpenFileName(self.window, description +' 2',"","TIFF/CBF Files (*.tif);;All Files (*)", options=options)   
                     if self.aux_file_names[dictionary_prefix + ' 2'] == None:
                         QMessageBox.about(self, "You have two detectors selected but only selected one image", "Warning")
                         self.file_error = True  
@@ -206,12 +302,14 @@ class ImageStack():
         """load background and dark images"""    
         self.__update_params()
         self.subtract_image=np.zeros((self.x_size2,self.y_size))  
+        self.subtract_bak_image=np.zeros((self.x_size2,self.y_size))  
         if self.two_detectors:
             unbinned_x_size = 2*self.xSize + self.gap
         else:
             unbinned_x_size = self.xSize   
 
         self.full_subtract_image = np.zeros((unbinned_x_size,self.ySize))   
+        self.full_subtract_bak_image = np.zeros((unbinned_x_size,self.ySize)) 
 
         if self.two_detectors:
             after_gap = self.x_size + int(self.gap/self.binning)
@@ -220,9 +318,11 @@ class ImageStack():
                 self.full_subtract_image[(self.xSize + self.gap):unbinned_x_size,:] += self.__load_image(self.aux_file_names['dark image 2'], nobin=True) 
             if self.flags['background image']:  
                 self.subtract_image[after_gap:self.x_size2,0:self.y_size] += self.__load_image(self.aux_file_names['background image 2']) 
+                self.subtract_bak_image[after_gap:self.x_size2,0:self.y_size] += self.__load_image(self.aux_file_names['background image 2']) 
                 self.full_subtract_image[(self.xSize + self.gap):unbinned_x_size,:] += self.__load_image(self.aux_file_names['background image 2'], nobin=True) 
             if self.flags['background dark image']:  
-                self.subtract_image[after_gap:self.x_size2,0:self.y_size] -= self.__load_image(self.aux_file_names['background dark image 2']) 
+                self.subtract_image[after_gap:self.x_size2,0:self.y_size] -= self.__load_image(self.aux_file_names['background dark image 2'])
+                self.subtract_bak_image[after_gap:self.x_size2,0:self.y_size] -= self.__load_image(self.aux_file_names['background dark image 2']) 
                 self.full_subtract_image[(self.xSize + self.gap):unbinned_x_size,:] -= self.__load_image(self.aux_file_names['background dark image 2'],nobin=True) 
                 
         if self.flags['dark image']: 
@@ -231,11 +331,14 @@ class ImageStack():
 
         if self.flags['background image']:       
             self.subtract_image[0:self.x_size,0:self.y_size] += self.__load_image(self.aux_file_names['background image 1'])
+            self.subtract_bak_image[0:self.x_size,0:self.y_size] += self.__load_image(self.aux_file_names['background image 1'])
             self.full_subtract_image[0:self.xSize,:] += self.__load_image(self.aux_file_names['background image 1'],nobin=True) 
 
         if self.flags['background dark image']: 
             self.subtract_image[0:self.x_size,0:self.y_size] -= self.__load_image(self.aux_file_names['background dark image 1'])
-            self.full_subtract_image[0:self.xSize,:] -= self.__load_image(self.aux_file_names['background dark image 1'],nobin=True) 
+            self.subtract_bak_image[0:self.x_size,0:self.y_size] -= self.__load_image(self.aux_file_names['background dark image 1'])
+            self.full_subtract_image[0:self.xSize,:] -= self.__load_image(self.aux_file_names['background dark image 1'],nobin=True)
+ 
       
     def select_background(self,paramHandle, filename=None, filename2=None):
         if type(paramHandle) == str:
@@ -268,7 +371,7 @@ class ImageStack():
         if self.beamline != 4:
             if not files:
                 options = QFileDialog.Options()
-                files, _ = QFileDialog.getOpenFileNames(self.window,"Select images to use", "","TIFF Files (*.tif);;All Files (*)", options=options)
+                files, _ = QFileDialog.getOpenFileNames(self.window,"Select images to use", "","TIFF/CBF Files (*.tif);;All Files (*)", options=options)
             if files:
                 self.image_file_names_1 = []
                 for file_name in files:
@@ -280,7 +383,7 @@ class ImageStack():
             if self.two_detectors:
                 if not files2:
                     options2 = QFileDialog.Options()
-                    files2, _ = QFileDialog.getOpenFileNames(self.window,"Select right detector images to use", "","TIFF Files (*.tif);;All Files (*)", options=options2)  
+                    files2, _ = QFileDialog.getOpenFileNames(self.window,"Select right detector images to use", "","TIFF/CBF Files (*.tif);;All Files (*)", options=options2)  
                 if files2:
                     self.image_file_names_2 = []
                     for file_name in files2:
@@ -305,11 +408,27 @@ class ImageStack():
                    self.scanno, ok = QInputDialog.getItem(self.window, "Scan number",    "Select scan ending in .1", items, 0, False)
                    if ok:                    
                     self.scan_name = '/'+self.scanno+'/measurement/p3'
-                    self.images_read = True                     
+                    self.images_read = True       
 
     def load_images(self): 
+        #scripting is not super compatible with multithreading if we are running a script
+        #we should not load the files in the background, otherwise the next script action will run
+        if self.window.single_thread == False:
+            worker = Worker(self.__load_images) # Any other args, kwargs are passed to the run function
+            #worker.signals.result.connect(self.print_output)
+            worker.signals.finished.connect(self.thread_complete)
+            worker.signals.progress.connect(self.progress_fn)
+            self.window.busy = True
+            self.window.threadpool.start(worker)   
+        else:
+            self.window.statusLabel.setText("SCRIPT MODE: Loading Files! (GUI DISABLED)") 
+            self.window.processEvents() 
+            self.__load_images(None)    
+
+    def __load_images(self, progress_callback): 
         """Loads files selected into memory"""  
         self.__update_params()   
+        self.angle_mode = False
         #esrf id31 beamline
         if self.beamline == 4:             
             self.hdf5_file = h5py.File(self.hdf5_file_name, 'r')   
@@ -334,39 +453,95 @@ class ImageStack():
             self.window.statusLabel.setText(str(self.number_of_images) + ' images selected')
             self.hdf5_file.close()
         #p07
-        if self.beamline == 3:
+        if self.beamline == 3 or self.beamline == 6:
             #We do this to surpress warnings from TIFF file having a bad header
             import logging
             logger = logging.getLogger()
             logger.setLevel(logging.CRITICAL)
             self.log_file_name = "something"
-            self.flags['normalize images'] = True
+            self.flags['normalize images'] = False
 
         if self.beamline != 4:
             self.window.statusLabel.setText(str(self.number_of_images) + ' images selected')
             self.window.progressBar.setMaximum(self.number_of_images)  
             #create empty array to place image data
             self.image_data=np.zeros([self.number_of_images,self.x_size2,self.y_size])
-            #loop through the images and put in data, also subtract background if needed. 
-            for i,filename in enumerate(self.image_file_names_1):
-                self.window.progressBar.setValue(i)
-                self.window.update()
+            #loop through the images and put in data, also subtract background if needed.           
+                             
+            for i,filename in enumerate(self.image_file_names_1):                               
                 self.image_data[i,0:self.x_size,0:self.y_size]=self.__load_image(filename)-self.subtract_image[0:self.x_size,0:self.y_size]
-
+                if self.window.single_thread == False:
+                    progress_callback.emit(i)
+                else:
+                    self.window.progressBar.setValue(i)
             #We load them in two loops because this is often quicker than the disk 
             #jumping back and forward all the time, depending on how the files are stored. 
             if self.two_detectors:
                 for i,filename in enumerate(self.image_file_names_2):
                     after_gap = self.x_size + int(self.gap/self.binning)
                     self.image_data[i,after_gap:self.x_size2,0:self.y_size]=self.__load_image(filename)-self.subtract_image[after_gap:self.x_size2,0:self.y_size]
-
+        
+        if self.window.single_thread == True:
+            text = str(self.number_of_images)+" Files Loaded"
+            self.window.statusLabel.setText(text) 
+            self.window.progressBar.setValue(self.number_of_images)
             if self.log_file_name or self.beamline == 5:
                 self.__process_log_file()
+            self.window.loadComplete()          
 
-            self.window.progressBar.setValue(i+1)
-        self.window.update()
+    def progress_fn(self, n):        
+        '''File loading progess'''
+        self.window.progressBar.setValue(n)
+        if n == 1:
+             self.window.loadUpdate(n)
+        if n!= 0 and n%40 == 0:
+            self.window.loadUpdate(n)
+
+    def thread_complete(self):
+        '''Function to be run after files are loaded'''
+        text = str(self.number_of_images)+" Files Loaded"
+        self.window.statusLabel.setText(text) 
+        self.window.progressBar.setValue(self.number_of_images)
+        if self.log_file_name or self.beamline == 5:
+            self.__process_log_file()
+        self.window.loadComplete()
+        self.window.busy = False
 
     def __get_p07_attributes(self, imgname):
+        '''Internal funciton same as external function - this is scheduled to be removed'''
+        #time, monitor, angle,exposure
+        with open(imgname.split('.')[0]+'.tif.metadata', 'r') as metadata:
+            for line in metadata:
+                ls = line.split('=')
+                linesplit = [x.rstrip() for x in ls]
+                if(linesplit[0]=='exposureTime'):
+                    expt = float(linesplit[1]) #exposure time
+                if(linesplit[0]=='userComment1'):
+                    omega = float(linesplit[2].strip('=')[0:-2]) #angle
+                if(linesplit[0]=='timeStamp'):
+                    time = float(linesplit[1]) #time
+                if(linesplit[0]=='extraInputs\\1\\extraInputs'):
+                    monitor = 1#abs(float(linesplit[1]))   #monitor              
+        return expt,monitor,omega,time 
+
+    def get_p07_attributes(self, imgname):
+        '''get attributes from p07 meta data files'''
+        #time, monitor, angle,exposure
+        with open(imgname.split('.')[0]+'.tif.metadata', 'r') as metadata:                        
+            for line in metadata:                
+                ls = line.split('=')
+                linesplit = [x.rstrip() for x in ls]
+                if(linesplit[0]=='exposureTime'):
+                    expt = float(linesplit[1]) #exposure time
+                if(linesplit[0]=='userComment1'):
+                    omega = float(linesplit[2].strip('=')[0:-2]) #angle
+                if(linesplit[0]=='timeStamp'):
+                    time = float(linesplit[1]) #time
+                if(linesplit[0]=='extraInputs\\1\\extraInputs'):
+                    monitor = abs(float(linesplit[1]))   #monitor    
+        return expt,monitor,omega,time 
+
+    def __get_p07_attributes_2021(self, imgname):
         '''get_p07 attributes gets some useful data out of the metafile'''
         #time, monitor, angle,exposure
         with open(imgname.split('.')[0]+'.tif.metadata', 'r') as metadata:
@@ -376,7 +551,7 @@ class ImageStack():
                 if(linesplit[0]=='exposureTime'):
                     expt = float(linesplit[1]) #exposure time
                 if(linesplit[0]=='userComment1'):
-                    omega = float(linesplit[2].strip('"')) #angle
+                    omega = float(linesplit[2].strip('=')[0:-2]) #angle
                 if(linesplit[0]=='timeStamp'):
                     time = float(linesplit[1]) #time
                 if(linesplit[0]=='extraInputs\\1\\extraInputs'):
@@ -384,6 +559,7 @@ class ImageStack():
         return expt,monitor,omega,time        
 
     def read_log_file(self,paramHandle,filename=None):
+        """Function to read log file"""
         if type(paramHandle) == str:
             filename =  paramHandle    
         self.__update_params()
@@ -395,9 +571,10 @@ class ImageStack():
             else:
                self.log_file_name = filename 
         elif self.beamline == 4:
-            print("Not available for this experiment metadata is extracted automatically")
+            self.window.statusLabel.setText("Not available for this experiment metadata is extracted automatically") 
 
     def __process_log_file(self):
+        """Internal function to proess several different log file formats"""
         self.__update_params()
         """Calls reads in the log file depending on the beamline"""
         if self.beamline == 2:   
@@ -420,12 +597,37 @@ class ImageStack():
             self.angle_mode = True
 
         #P07, DESY
-        if self.beamline == 3: 
+        if self.beamline == 3  : 
             all_angles = []
             self.monitor = []
             for i,imgname in enumerate(self.image_file_names_1):
                 #exposure, monitor, angle, time
-                expt,monitor,omega,time = self.__get_p07_attributes(imgname)
+                expt,monitor,omega,time = self.__get_p07_attributes(imgname)             
+                all_angles.append(omega)
+                self.monitor.append(monitor*expt)
+                self.angle_mode = True               
+                #not currently using the time
+                self.image_data[i] = self.image_data[i] #/(monitor*expt)  
+            self.start_angle=all_angles[0]
+            self.end_angle=all_angles[-1] 
+
+            #are the angles backwards?       
+            if all_angles[0] < all_angles[-1]:
+                self.start_angle=all_angles[0]
+                self.end_angle=all_angles[-1]
+            else:
+                self.start_angle=all_angles[-1]
+                self.end_angle=all_angles[0]  
+                self.image_data = np.flip(self.image_data, axis=0)  
+                self.image_file_names_1 = np.flip(self.image_file_names_1)  
+                self.image_file_names_2 = np.flip(self.image_file_names_2)  
+
+        if self.beamline == 6: 
+            all_angles = []
+            self.monitor = []
+            for i,imgname in enumerate(self.image_file_names_1):
+                #exposure, monitor, angle, time
+                expt,monitor,omega,time = self.__get_p07_attributes_2021(imgname)
                 all_angles.append(omega)
                 self.monitor.append(monitor*expt)
                 self.angle_mode = True               
@@ -442,6 +644,7 @@ class ImageStack():
                 self.image_data = np.flip(self.image_data, axis=0)  
                 self.image_file_names_1 = np.flip(self.image_file_names_1)  
                 self.image_file_names_2 = np.flip(self.image_file_names_2)  
+
 
         if self.beamline == 4:  
             all_angles = np.asarray(self.hdf5_file['/'+self.scanno+'/measurement/th/'])
@@ -472,19 +675,27 @@ class ImageStack():
     def get_image(self,start, end):
         """return a summed or max image between with two angles or image numbers,
            depening on self.angle_mode and the 'Mean Images Instead of Max' parameter"""
-        self.__update_params()
+        self.__update_params()        
+        
         if self.angle_mode:            
             self.from_image2=int(np.floor(self.angle2image(start)))
             self.to_image2=int(np.ceil(self.angle2image(end))) 
         else:
             self.from_image2=int(np.floor(start))
-            self.to_image2=int(np.ceil(end))
+            self.to_image2=int(np.ceil(end))            
         if self.mean:
             self.img = np.mean(self.image_data[self.from_image2:self.to_image2,:,:],axis=0)
+            #if there is background subtraction and we don't want it we should add the subtracted background back
+            if self.flags['background image'] == True: 
+                if self.subtract_bak_image_box == False:
+                    self.img = self.img + self.subtract_bak_image
         else:
             self.img =  np.max(self.image_data[self.from_image2:self.to_image2,:,:],axis=0)
-        return self.img
-
+            if self.flags['background image'] == True:
+                if self.subtract_bak_image_box == False:
+                    self.img = self.img + self.subtract_bak_image*(end-start)
+        return self.multiply*self.img+self.offset
+        
     def is_region_ok(self,start,end):
         """Function to check if a given range is less is less than the image increment"""
         if self.angle_mode:      
@@ -500,11 +711,14 @@ class ImageStack():
         return True  
 
     def get_step(self):
+        """Return the step size of one image """
         if self.angle_mode:            
             return (self.end_angle-self.start_angle)/self.number_of_images
         else:
             return 1
+
     def number_of_images_in_range(self,start_angle,end_angle):
+        """Return how many images are in a given angular range"""
         from_image=int(np.floor(self.angle2image(start_angle)))
         to_image=int(np.ceil(self.angle2image(end_angle)))  
         return to_image-from_image
