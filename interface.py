@@ -138,6 +138,7 @@ class Ram(QWidget):
         self.progressBar.setValue(n)
 
     def makeProjection(self):    
+        
         """ Fnction for creating an in-plane map by generating coordinates for each pixel and place them in the correct histogram bin"""
         #first we check if it makes sense to do the calculation
         if self.busy == True:
@@ -150,10 +151,15 @@ class Ram(QWidget):
         if not self.mask_list:
             self.statusLabel.setText('Error: You must first select a mask')   
             return
-
         else:   
+            projection = self.p.param('Data Processing', 'Select Projection').value()
             self.binBounds = []          
             self.convertMasks()
+            if projection != 0 :
+                binning=int(self.p.param('Data Processing', 'Binning (X by X)').value())
+                second_det = self.p.param('Data Processing', 'Use 2nd detector').value()  
+                self.pixMaps=self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)
+
             if self.single_thread == False:
                 worker = fileio.Worker(self.__makeProjection)
                 worker.signals.finished.connect(self.__projection_complete)
@@ -166,13 +172,13 @@ class Ram(QWidget):
                 self.__makeProjection(empty_callback)
                 self.__projection_complete()
         
-    def __projection_complete(self):
+    def __projection_complete(self):        
+        self.imgLeft.resetTransform()
         self.hist.setImageItem(self.imgLeft)
         self.p3.getViewBox().setAspectLocked(True)          
         self.ctrROI.hide()
         self.p4.hide()
         self.ImgState=2
-        self.imgLeft.resetTransform()
         self.angleRegion.setMovable(False)              
         self.setupProjectionAxis()      
         grid_res = self.p.param('Data Processing', 'Grid Size').value()
@@ -212,24 +218,22 @@ class Ram(QWidget):
         #interpolate the angles in our range
         angles=np.linspace(start_angle-step_size,end_angle+step_size,number_of_images)
 
-        #this needs fixing to use mask values
         if self.p.param('Data Processing', 'Select Projection').value() == 0:
-            qmax = self.qrmax
+            qmax = self.qrmax+0.1
+            if self.qzmax > self.qmax:
+                qmax = self.qzmax+0.1  
         else:
-            tmp =self.experiment.dector_frame_to_hkl_frame(self,binning,second_det,0)   
-            qmax = np.max(tmp[2]) #qz
+            qmax = np.max(self.pixMaps[2])+0.1 #qz     
 
-        if self.qrmax > self.qmax:
-            self.qmax = self.qrmax  
+        self.qmax = qmax       
 
-               
-               
         #grid res is the number of bins in each direciton
         grid_res = self.p.param('Data Processing', 'Grid Size').value()
         gridstep = (2*qmax/grid_res) # x2 for negative values
-        
+        print("GRID STEP:",gridstep, grid_res)
         #these grids are coordinate grids that are used when selecting box profiles
         self.grid_qy = np.tile((np.arange(-1*qmax,qmax,gridstep)),(math.ceil(2*qmax/gridstep),1))
+        print(np.shape(self.grid_qy))
         self.grid_qx = np.transpose(self.grid_qy)
         self.grid_qr = np.sqrt(self.grid_qx**2 + self.grid_qy**2)                
         
