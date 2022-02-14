@@ -231,7 +231,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                     this is eqn 44. in ref. 1"""
                     so = math.sin(rotDirection*(omega_rad+midang))
                     co = math.cos(rotDirection*(omega_rad+midang))
-                    ci = 1 #angle of incidence set ealier q calc
+                    ci = float(1) #angle of incidence set ealier q calc
                     si = 0 #angle of incidence set ealier q calc
 
                     hphi_1 = so*qy+co*qx
@@ -250,11 +250,10 @@ class ExperimentParameter(pTypes.GroupParameter):
                     h_glob[row,col] = h
                     k_glob[row,col] = k
                     l_glob[row,col] = l
-
                     if recp_units == 1 and b1 != b2:
                         hk_glob[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
                     elif recp_units == 1 and abs(90 - beta3) > 0.1:
-                        hk_glob[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b2)**2)
+                        hk_glob[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
                     else:
                         hk_glob[row,col] = math.copysign(1,gam_pix)*math.sqrt((h)**2 + (k)**2)                      
                     
@@ -367,12 +366,12 @@ class ExperimentParameter(pTypes.GroupParameter):
                         h_img[row,col] = h
                         k_img[row,col] = k
                         l_img[row,col] = l    
-
                         if recp_units == 1 and b1 != b2:
                             hk_img[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
                         elif recp_units == 1 and abs(90 - beta3) > 0.1:
-                            hk_img[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b2)**2)
+                            hk_img[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
                         else:
+
                             hk_img[row,col] = math.copysign(1,gam_pix)*math.sqrt((h)**2 + (k)**2)         
                 return [h_img,k_img,l_img,hk_img,c_img]
 
@@ -392,7 +391,8 @@ class ExperimentParameter(pTypes.GroupParameter):
         cos_alpha = math.cos(angi)
         sin_alpha = math.sin(angi)  
 
-        omega_rad=np.deg2rad(self.param('Angle offset').value())
+        omega_rad=np.deg2rad(self.param('Angle offset').value())+np.deg2rad(self.param('Aux Angle offset').value())
+        
         rotDirection=(self.param('Axis directon').value())
         use_raw_files= window.p.param('Data Processing', 'Bin From Full Images').value()   
 
@@ -421,7 +421,6 @@ class ExperimentParameter(pTypes.GroupParameter):
         correct=window.p.param('Data Processing', 'Apply Intensity Corrections').value()
         bounds = np.asarray(window.binBounds,dtype=np.single)
         projection=window.p.param('Data Processing', 'Select Projection').value()
-        norm_hist=True
         
         angi_c = np.deg2rad(self.param('Critical Angle').value())      
         sin_crtical_angle = math.sin(angi_c)    
@@ -517,10 +516,21 @@ class ExperimentParameter(pTypes.GroupParameter):
                     delta_x = (col-q0[0])*pixel_x
                     so = math.sin(rotDirection*(omega_rad+midang))
                     co = math.cos(rotDirection*(omega_rad+midang))
+                    qy = qy[row,col]
+                    qx = qx[row,col]
+                    qz = qz[row,col]
 
-                    hphi_1 = so*qy[row,col]+co*qx[row,col]
-                    hphi_2 = co*qy[row,col]-so*qx[row,col]
-                    hphi_3 = qz[row,col]
+                    #we deal with the angle of incidence earlier
+                    ci = 1
+                    si = 0  
+
+                    hphi_1 = so*(ci*qy+si*qz)+co*qx
+                    hphi_2 = co*(ci*qy+si*qz)-so*qx
+                    hphi_3 = ci*qz-si*qy  
+
+                    #hphi_1 = so*qy[row,col]+co*qx[row,col]
+                    #hphi_2 = co*qy[row,col]-so*qx[row,col]
+                    #hphi_3 = qz[row,col]
 
                     if recp_units == 1:
                         h=  Binv[0][0]*hphi_1+Binv[0][1]*hphi_2+Binv[0][2]*hphi_3
@@ -595,8 +605,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                 if window.single_thread == False:
                     progress_callback.emit(i)  
                 else:
-                    window.progressBar.setValue(i) 
-                    window.processEvents()       
+                    window.progressBar.setValue(i)                            
 
             hist = np.asarray(histogram_result.copy_to_host()) 
 
@@ -752,8 +761,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                 if window.single_thread == False:
                     progress_callback.emit(i)  
                 else:
-                    window.progressBar.setValue(i) 
-                    window.processEvents()      
+                    window.progressBar.setValue(i)                          
 
             hist2 = np.divide(final_hist, final_weights, where=final_weights!=0)               
             return hist2    
@@ -791,10 +799,12 @@ class ExperimentParameter(pTypes.GroupParameter):
 
         self.addChild({'name': 'Angle of Incidence', 'type': 'float', 'value': 0.07, 'suffix': '°', 'step': 0.001,'suffixGap': ''})
         self.addChild({'name': 'Axis directon', 'type': 'list', 'values': {"Positive": 1, "Negative": -1}, 'value': -1})
-        self.addChild({'name': 'Angle offset', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
-        self.addChild({'name': 'Beamline Preset', 'type': 'list', 'values': {"P21.2 1": 1, "P21.2 2": 2, "P07 2019": 3,"ID31 HDF5": 4,"Manual": 5,"P07 2021":6},'value': 1})
+        self.addChild({'name': 'Angle offset', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.001})
+        self.addChild({'name': 'Aux Angle offset', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.001})
+        self.addChild({'name': 'Beamline Preset', 'type': 'list', 'values': {"P21.2 1": 1, "P21.2 2": 2, "P07 2019": 3,"ID31 HDF5": 4,"Manual": 5,"P07 2021":6,"P21.2 Dec 21": 7},'value': 1})
         self.addChild({'name': 'Manual Start Angle', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
         self.addChild({'name': 'Manual End Angle', 'type': 'float', 'value': 0,'suffix': '°','suffixGap': '', 'step': 0.01})
+        
 
         self.energy = self.param('Energy')
         self.wavelength = self.param('Wavelength')

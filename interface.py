@@ -161,9 +161,9 @@ class Ram(QWidget):
                 self.busy = True
                 self.threadpool.start(worker) 
             else:
+                empty_callback = 0
                 self.statusLabel.setText("SCRIPT MODE: Loading Files! (GUI DISABLED)") 
-                self.__projection_progress() 
-                self.__makeProjection()
+                self.__makeProjection(empty_callback)
                 self.__projection_complete()
         
     def __projection_complete(self):
@@ -222,7 +222,7 @@ class Ram(QWidget):
         if self.qrmax > self.qmax:
             self.qmax = self.qrmax  
 
-        self.qmax = qmax+0.1          
+               
                
         #grid res is the number of bins in each direciton
         grid_res = self.p.param('Data Processing', 'Grid Size').value()
@@ -921,6 +921,11 @@ class Ram(QWidget):
         self.image_stack.load_aux_files()           
         text = str(self.image_stack.number_of_images)+" images selected with flags"+str(self.image_stack.flags)+"  Press Load (CTRL+L)"            
         self.statusLabel.setText(text) 
+
+    def reloadWarning(self):
+        if self.image_stack.image_file_names_1 is not None:
+            self.statusLabel.setText("For this change to take affect you need to reaload the files (CTRL+L)") 
+            self.warnDialog("Manually type the whole number. For this change to take affect you need to reaload the files (CTRL+L)")
     
     def updateCrange(self):
         cmin, cmax = self.hist.getLevels()
@@ -973,6 +978,24 @@ class Ram(QWidget):
                 self.cshift = 0
                 self.log_active = False
                 self.imgLeft.show()   
+
+    def toggleBg(self):            
+            if self.white_background:
+                self.win.setBackground('k')
+                self.white_background = False
+            else:
+                self.win.setBackground('w')   
+                self.white_background = True    
+
+    def warnDialog(self,text):
+        d = QDialog()
+        d.setWindowTitle("Warning")
+        d.setFixedSize(550,50)
+        t = QLabel(d)
+        t.setText(text)
+        t.move(20,2)
+        d.setWindowModality(Qt.ApplicationModal)
+        d.exec_()
                 
     def aboutHelp(self):
         """Function to display and about help dialog"""
@@ -989,7 +1012,6 @@ class Ram(QWidget):
 
         t3 = QLabel(d)
         t3.setText('Eventually a link to a readthedocs.io page will come here')
-
 
         t1.move(20,2)
         t2.move(20,100)
@@ -1011,6 +1033,8 @@ class Ram(QWidget):
         self.cshift = 0 #for a potential color shift when taking log
         self.log_active = False
         self.qmax =0
+        self.white_background = False
+        
             
         params = [
             self.experiment,
@@ -1019,8 +1043,7 @@ class Ram(QWidget):
                 {'name': 'Binning (X by X)', 'type': 'int', 'value': 4, 'step': 1},
                 {'name': 'hkl Resolution', 'type': 'int', 'value': 1000, 'step': 1},
                 {'name': 'Grid Size', 'type': 'int', 'value': 800, 'step': 1},
-                {'name': 'Select Projection', 'type': 'list', 'values': {"h-k": 0, "h-l": 1, "k-l": 2,"h^2+k^2 - l": 3},'value': 0},
-                {'name': 'White Background', 'type': 'bool', 'value': False},
+                {'name': 'Select Projection', 'type': 'list', 'values': {"h-k": 0, "h-l": 1, "k-l": 2,"h^2+k^2 - l": 3},'value': 0},               
                 {'name': 'Mean Images Instead of Max', 'type': 'bool','valie':False},
                 {'name': 'Acceleration', 'type': 'list', 'values': {"none": 0, "numba (cpu)": 1, "cuda (gpu)": 2},'value': 1},                    
                 {'name': 'Bin From Full Images', 'type': 'bool', 'value': False},             
@@ -1033,7 +1056,7 @@ class Ram(QWidget):
                 {'name': 'Image Rotation', 'type': 'list', 'values': {"0 degrees": 0, "90 degrees": 1, "180 degrees": 2,"270 degrees": 3},'value': 0},
                 {'name': 'Image Flip U/D', 'type': 'list', 'values': {"True": True,"False": False},'value': False},
                 {'name': 'Image Flip L/R', 'type': 'list', 'values': {"True": True,"False": False},'value': False},
-                {'name': 'Use 2nd detector', 'type': 'bool', 'value': False},                 
+                {'name': 'Use 2nd detector', 'type': 'bool', 'value': False},      
             ]},
             {'name': 'Profile tools', 'type': 'group', 'children': [
                 {'name': 'Enable Box Profile', 'type': 'bool',},
@@ -1048,11 +1071,7 @@ class Ram(QWidget):
 
 
         #p.param('Save/Restore functionality', 'Save State').sigActivated.connect(save)
-        def toggleBg():
-            if self.p.param('Data Processing', 'White Background').value():
-                win.setBackground('w')
-            else:
-                win.setBackground('k')       
+
 
         self.p = Parameter.create(name='params', type='group', children=params)
 
@@ -1161,12 +1180,19 @@ class Ram(QWidget):
         transViewAct.setStatusTip('Summed or averaged image stack is corrected for curvature of the Ewald Sphere and given coordinates')
         transViewAct.triggered.connect(self.detectorTransform)
         actionView.addAction(transViewAct)
-
+        
         binViewAct = QAction('Binned Projection', self)
         binViewAct.setShortcut('Ctrl+3')
         binViewAct.setStatusTip('Use all pixels across the selected angular range to create a projection')
         binViewAct.triggered.connect(self.makeProjection)
         actionView.addAction(binViewAct)
+
+        actionView .addSeparator()
+        toggleBackgroundColour = QAction('Toggle Background Color (white/black)', self)
+        toggleBackgroundColour.triggered.connect(self.toggleBg)
+        actionView.addAction(toggleBackgroundColour)
+
+
         
         actionRun = menubar.addMenu("&Script")
 
@@ -1244,9 +1270,9 @@ class Ram(QWidget):
         cmaxwidget = toolbar1.addWidget(self.cmaxbox)   
         self.cmaxbox.editingFinished.connect(self.updateCrangeManual)            
         
-        
-
-        self.p.param('Data Processing', 'White Background').sigValueChanged.connect(toggleBg)
+        self.experiment.param('Manual Start Angle').sigValueChanged.connect(self.reloadWarning)
+        self.experiment.param('Manual End Angle').sigValueChanged.connect(self.reloadWarning)
+                
         self.p.param('Data Processing', 'Log Intensity').sigValueChanged.connect(self.logIntensity)
         self.p.param('Data Processing', 'Perform Background Subtraction').sigValueChanged.connect(self.updateRegion)
         self.p.param('Data Processing', 'Mean Images Instead of Max').sigValueChanged.connect(self.updateRegion)   
@@ -1269,6 +1295,7 @@ class Ram(QWidget):
 
         gridLayout.addWidget(t,1,1)
         win = pg.GraphicsLayoutWidget()
+        self.win = win
         gridLayout.addWidget(win,1,0)
 
         self.progressBar=QProgressBar()

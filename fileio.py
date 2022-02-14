@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from logging import exception
 import numpy as np
 from PyQt5.QtWidgets import QMessageBox
 import pyqtgraph.parametertree.parameterTypes as pTypes
@@ -18,7 +19,9 @@ import util
 from scipy import interpolate
 import copy
 from time import sleep
+import natsort as ns
 import traceback,sys
+
 
 class WorkerSignals(QObject):
     '''
@@ -124,6 +127,7 @@ class ImageStack():
     #Normalisation  
 
     def __init__(self,parameters):
+        self.image_data = [None]        
         self.images_read = False     
         self.angle_mode = False
         self.window = parameters 
@@ -281,7 +285,7 @@ class ImageStack():
             print(description,dictionary_prefix)
             if not filename:
                 options = QFileDialog.Options()
-                self.aux_file_names[dictionary_prefix + ' 1'], _ = QFileDialog.getOpenFileName(self.window, description +' 1',"","TIFF/CBF Files (*.tif);;All Files (*)", options=options) 
+                self.aux_file_names[dictionary_prefix + ' 1'], _ = QFileDialog.getOpenFileName(self.window, description +' 1',"","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options) 
             else:
                 self.aux_file_names[dictionary_prefix + ' 1'] = filename
 
@@ -291,7 +295,7 @@ class ImageStack():
             #For 2nd detector
             if self.two_detectors:
                 if not filename2:
-                    self.aux_file_names[dictionary_prefix + ' 2'], _ = QFileDialog.getOpenFileName(self.window, description +' 2',"","TIFF/CBF Files (*.tif);;All Files (*)", options=options)   
+                    self.aux_file_names[dictionary_prefix + ' 2'], _ = QFileDialog.getOpenFileName(self.window, description +' 2',"","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options)   
                     if self.aux_file_names[dictionary_prefix + ' 2'] == None:
                         QMessageBox.about(self, "You have two detectors selected but only selected one image", "Warning")
                         self.file_error = True  
@@ -371,7 +375,7 @@ class ImageStack():
         if self.beamline != 4:
             if not files:
                 options = QFileDialog.Options()
-                files, _ = QFileDialog.getOpenFileNames(self.window,"Select images to use", "","TIFF/CBF Files (*.tif);;All Files (*)", options=options)
+                files, _ = QFileDialog.getOpenFileNames(self.window,"Select images to use", "","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options)
             if files:
                 self.image_file_names_1 = []
                 for file_name in files:
@@ -383,7 +387,7 @@ class ImageStack():
             if self.two_detectors:
                 if not files2:
                     options2 = QFileDialog.Options()
-                    files2, _ = QFileDialog.getOpenFileNames(self.window,"Select right detector images to use", "","TIFF/CBF Files (*.tif);;All Files (*)", options=options2)  
+                    files2, _ = QFileDialog.getOpenFileNames(self.window,"Select right detector images to use", "","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options2)  
                 if files2:
                     self.image_file_names_2 = []
                     for file_name in files2:
@@ -413,6 +417,20 @@ class ImageStack():
     def load_images(self): 
         #scripting is not super compatible with multithreading if we are running a script
         #we should not load the files in the background, otherwise the next script action will run
+        #clear current image stack
+        if None in self.image_data:
+            del(self.image_data)
+        try:
+            self.image_data=np.zeros([self.number_of_images,self.x_size2,self.y_size],dtype=np.float32)
+        except:
+            self.window.statusLabel.setText('Insufficent memory!! Try to increase the binning.')                
+            return 
+
+        #we should appropriately sort the filelist
+        self.image_file_names_1 = ns.natsorted(self.image_file_names_1,alg=ns.PATH)
+        if self.image_file_names_2:
+            self.image_file_names_2 = ns.natsorted(self.image_file_names_2,alg=ns.PATH)
+
         if self.window.single_thread == False:
             worker = Worker(self.__load_images) # Any other args, kwargs are passed to the run function
             #worker.signals.result.connect(self.print_output)
@@ -421,8 +439,7 @@ class ImageStack():
             self.window.busy = True
             self.window.threadpool.start(worker)   
         else:
-            self.window.statusLabel.setText("SCRIPT MODE: Loading Files! (GUI DISABLED)") 
-            self.window.processEvents() 
+            self.window.statusLabel.setText("SCRIPT MODE: Loading Files! (GUI DISABLED)")             
             self.__load_images(None)    
 
     def __load_images(self, progress_callback): 
@@ -447,8 +464,7 @@ class ImageStack():
             self.number_of_images = len(self.image_data)
             #We just make a titled numpy array to subtract the background form each image
             background = np.tile(self.subtract_image,(self.number_of_images,1,1))
-            self.image_data -= np.int32(background)
-            
+            self.image_data -= np.int32(background)            
             self.__process_log_file()
             self.window.statusLabel.setText(str(self.number_of_images) + ' images selected')
             self.hdf5_file.close()
@@ -463,23 +479,21 @@ class ImageStack():
 
         if self.beamline != 4:
             self.window.statusLabel.setText(str(self.number_of_images) + ' images selected')
-            self.window.progressBar.setMaximum(self.number_of_images)  
-            #create empty array to place image data
-            self.image_data=np.zeros([self.number_of_images,self.x_size2,self.y_size])
+            self.window.progressBar.setMaximum(self.number_of_images) 
+            if self.two_detectors: 
+                after_gap = self.x_size + int(self.gap/self.binning)
             #loop through the images and put in data, also subtract background if needed.           
                              
             for i,filename in enumerate(self.image_file_names_1):                               
                 self.image_data[i,0:self.x_size,0:self.y_size]=self.__load_image(filename)-self.subtract_image[0:self.x_size,0:self.y_size]
+                if self.two_detectors: 
+                    self.image_data[i,after_gap:self.x_size2,0:self.y_size]=self.__load_image(self.image_file_names_2[i])-self.subtract_image[after_gap:self.x_size2,0:self.y_size]
                 if self.window.single_thread == False:
                     progress_callback.emit(i)
                 else:
                     self.window.progressBar.setValue(i)
             #We load them in two loops because this is often quicker than the disk 
             #jumping back and forward all the time, depending on how the files are stored. 
-            if self.two_detectors:
-                for i,filename in enumerate(self.image_file_names_2):
-                    after_gap = self.x_size + int(self.gap/self.binning)
-                    self.image_data[i,after_gap:self.x_size2,0:self.y_size]=self.__load_image(filename)-self.subtract_image[after_gap:self.x_size2,0:self.y_size]
         
         if self.window.single_thread == True:
             text = str(self.number_of_images)+" Files Loaded"
@@ -487,6 +501,10 @@ class ImageStack():
             self.window.progressBar.setValue(self.number_of_images)
             if self.log_file_name or self.beamline == 5:
                 self.__process_log_file()
+                if self.beamline == 7:
+                    #divide images by monitor 
+                    self.image_data = self.image_data#/self.monitor
+            
             self.window.loadComplete()          
 
     def progress_fn(self, n):        
@@ -504,6 +522,11 @@ class ImageStack():
         self.window.progressBar.setValue(self.number_of_images)
         if self.log_file_name or self.beamline == 5:
             self.__process_log_file()
+            if self.beamline == 7:
+                #divide images by monitor 
+                for i, mon in enumerate(self.monitor):
+                    self.image_data[i,:,:] = self.image_data[i,:,:]/mon
+            
         self.window.loadComplete()
         self.window.busy = False
 
@@ -564,7 +587,7 @@ class ImageStack():
             filename =  paramHandle    
         self.__update_params()
         #p21.2 - 2020
-        if self.beamline == 2 or self.beamline == 1:  
+        if self.beamline == 2 or self.beamline == 1 or self.beamline== 7:  
             if not filename:      
                 options = QFileDialog.Options()
                 self.log_file_name, _ = QFileDialog.getOpenFileName(self.window,"Select log file to use", "","Log Files (*.fio);;All Files (*)", options=options)     
@@ -577,9 +600,104 @@ class ImageStack():
         """Internal function to proess several different log file formats"""
         self.__update_params()
         """Calls reads in the log file depending on the beamline"""
+        #P21.2 Dec 21
+        if self.beamline == 7:   
+            flip = False
+            LogFileLines=None
+            with open(self.log_file_name) as f:
+                #first we find the data section
+                line = f.readline()
+                while("%d" not in line):
+                    line = f.readline()
+                    if not line:
+                        print("BAD INPUT FILE")
+                        quit()
+                        
+                #read the col names
+                angle_col = 0
+                time_col = 0
+                file_col = 0
+                chan_col = 0
+
+                line = f.readline()
+                while("Col" in line):
+                    col_name= line.split()[2]
+                    #next we want the column number
+                    if col_name == "idrz1(encoder)":
+                        angle_col = int(line.split()[1])-1
+                    if col_name == "filename":
+                        file_col = int(line.split()[1])-1
+                    if col_name == "unix":
+                        time_col = int(line.split()[1])-1
+                    if col_name == "channel":
+                        chan_col = int(line.split()[1])-1
+                    if "clearning" in line:
+                        print("Warning a clearning image was included!")
+                    line = f.readline()
+                data = []        
+                #read in columns we care about
+
+                while len(line.split())>2:
+                    row = line.split()
+                    data.append([row[angle_col],row[time_col],row[file_col],row[chan_col]])
+                    line = f.readline()                
+     
+            #we want the angular range
+            first_file_name=str(self.image_file_names_1[0]).split('/')[-1]
+            last_file_name=str(self.image_file_names_1[-1]).split('/')[-1]     
+
+
+            for row in data:
+                if first_file_name in row[2]:
+                    self.start_angle = float(row[0])
+                if last_file_name in row[2]:
+                    self.end_angle = float(row[0])
+
+            
+            #swap the order if they are backwards
+            if self.start_angle > self.end_angle:
+                self.start_angle,self.end_angle = self.end_angle, self.start_angle
+                flip = True
+            
+            #if the angle is not in the range discard
+            data2 = []
+            for i,row in enumerate(data):
+                if float(row[0]) < self.start_angle or float(row[0])>self.end_angle:
+                    continue
+                if int(row[3]) == 1:
+                    data2.append(row[1])
+
+            #next we open the slower log file and interplote the monitor values as a function of time                   
+            #this is a bit janky and will fail is fio is in the path
+            timestamp = []
+            eh_diode = []
+            with open(self.log_file_name.replace("fio","log")) as f:
+                line = f.readline()                
+                #skip comments
+                while (line[0]=="#"):
+                    line = f.readline()   
+
+                while(len(line.split()) >3):
+                    row = line.split()
+                    timestamp.append(float(row[0]))
+                    eh_diode.append(float(row[3]))
+                    line = f.readline()
+
+            time_to_mon = interpolate.interp1d(np.asarray(timestamp),np.asarray(eh_diode))
+            mon = []       
+            for row in data2:
+                mon.append(time_to_mon(row))            
+            self.monitor = np.asarray(mon)
+            if flip:
+                #also need to revese monitor list and file list should be done automatically also
+                self.monitor = np.flip(self.monitor)              
+            self.angle2image=interpolate.interp1d((self.start_angle,self.end_angle),(0,self.number_of_images))
+            self.LogFile=True
+            self.angle_mode = True
+
         if self.beamline == 2:   
-            first_file_name_number=str(sorted(self.image_file_names_1)[0]).split('/')[-1]
-            last_file_name_number=str(sorted(self.image_file_names_1)[-1]).split('/')[-1]  
+            first_file_name_number=str(self.image_file_names_1)[0].split('/')[-1]
+            last_file_name_number=str(self.image_file_names_1)[-1].split('/')[-1]  
             LogFileLines=None
             with open(self.log_file_name) as f:
                 LogFileLines = f.readlines()
