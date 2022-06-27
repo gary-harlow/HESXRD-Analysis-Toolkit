@@ -3,7 +3,7 @@ name = "xray-hat"
 version = "2.0.0"
 description = "Software for the analysis of high-energy surface x-ray diffraction data"
 authors = [
-    "Gary Harlow <gary.harlow@mau.se>"
+    "Gary Harlow <gary.harlow@mau.se>",
     "Sebastian Pfaff sebastian.pfaff@forbrf.lth.se>"
 ]
 
