@@ -1,21 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import sys,os
-from PyQt5.QtWidgets import QApplication, QWidget, QInputDialog, QLineEdit, QFileDialog, QCheckBox, QProgressBar
-from PyQt5.QtGui import QIcon, QPixmap
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QMainWindow, QLabel, QGridLayout, QWidget,QPushButton
-from PyQt5.QtCore import QSize, Qt    
-from scipy import interpolate
+import sys
 import pyqtgraph.parametertree.parameterTypes as pTypes
-import pyqtgraph as pg
-from pyqtgraph.parametertree import Parameter, ParameterTree, ParameterItem, registerParameterType
-import matplotlib.pyplot as plt
 import numpy as np
-import fabio
-import pickle
 import math
-import cmath
 
 
 class CrystallographyParameters(pTypes.GroupParameter):
@@ -129,263 +117,6 @@ class CrystallographyParameters(pTypes.GroupParameter):
 
 class ExperimentParameter(pTypes.GroupParameter):
     
-    def dector_frame_to_hkl_frame(self,window,binning,twodetectors,midangle):
-        """Function to generate coordinate grid for detector image"""
-        angi=np.deg2rad(self.param('Angle of Incidence').value())
-        omega_rad=np.deg2rad(self.param('Angle offset').value())
-        rotDirection=(self.param('Axis directon').value())
-        pixel_count_x=int(self.param('X Pixels').value()/binning)
-        pixel_count_y=int(self.param('Y Pixels').value()/binning)
-        acceleration=window.p.param('Data Processing', 'Acceleration').value() 
-        correct_refraction=window.p.param('Data Processing', 'Correct for Refraction').value() 
-        correct=window.p.param('Data Processing', 'Apply Intensity Corrections').value()
-        angi_c = np.deg2rad(self.param('Critical Angle').value())
-        if twodetectors:
-            pixel_count_x=int((2*self.param('X Pixels').value()+self.param('Detector Gap (pixels)').value())/binning)
-        pixel_x=self.param('Pixel Size').value()*binning
-        pixel_y=self.param('Pixel Size').value()*binning
-        
-        SDD=self.param('Sample-Detector Dist.').value()
-        invSDD=1/self.param('Sample-Detector Dist.').value()   
-        q0=np.array([self.param('Center Pixel X').value()/binning,self.param('Center Pixel Y').value()/binning]).copy()
-        k0=(np.pi*2)/self.param('Wavelength').value()
-        p_h=self.param('Horizontal Polarisation').value()
-        Binv=window.crystal.calcBInv()
-        beta3 = window.crystal.param('β₃').value()
-        b1=window.crystal.param('b₁').value()
-        b2=window.crystal.param('b₂').value()
-        recp_units=window.crystal.param('Reciprocal Units').value()
-        sin_crtical_angle = math.sin(angi_c)    
-        cos_alpha = math.cos(angi)
-        sin_alpha = math.sin(angi)  
-
-        if  acceleration==2:
-            if "cuda" not in sys.modules:
-                from numba import cuda
-            @cuda.jit(fastmath=True)
-            def detector_to_hkl_kernel(h_glob,k_glob,l_glob,hk_glob,c_glob,midang):
-                #get the current thread position
-                row,col = cuda.grid(2)
-
-                if row < hk_glob.shape[0] and col < hk_glob.shape[1]:
-                    delta_z= (q0[1]-row)*pixel_y  #real-space dinstance from centre pixel y
-                    delta_x = (col-q0[0])*pixel_x  #real-space dinstance from centre pixel x
-                    delta_x_2 = delta_x*delta_x
-                    delta_z_2 = delta_z*delta_z
-                    delR = math.sqrt(delta_x_2 + delta_z_2)            
-                    dist = math.sqrt(delta_x_2+SDD*SDD + delta_z_2) #distance to pixel
-                    #https://www.classe.cornell.edu/~dms79/D-lineNotes/GISAXS-at-D-line/GIWAXS@D1_Conversions.html
-                    #i.e Smilgies & Blasini, J. Appl. Cryst. 40, 716-718 (2007   
-                    gam_pix  = math.atan(delta_x*invSDD)
-                    del_pix =  math.atan(delta_z/math.sqrt(delta_x_2 + SDD*SDD))        
-                    
-                    cos_gam = math.cos(gam_pix)  
-                    sin_gam = math.sin(gam_pix) 
-                    beta_out = del_pix - angi*cos_gam 
-                    cos_beta = math.cos(beta_out)
-                    sin_beta = math.sin(beta_out)   
-
-                    #scattering vector relative to the surface frame                 
-                    qx = k0*(cos_beta*cos_gam-cos_alpha)                    
-                    qy = k0*(cos_beta*sin_gam) 
-                    qz = k0*(sin_beta+sin_alpha)
-
-                    #refraction correction
-                    # Busch et al., J. Appl. Cryst. 39, 433-442 (2006)
-                    if correct_refraction:
-                        kzi = k0*math.sqrt(abs(sin_alpha*sin_alpha - sin_crtical_angle*sin_crtical_angle))
-                        kzf = k0*math.sqrt(abs(sin_beta*sin_beta - sin_crtical_angle*sin_crtical_angle))
-                        qz = kzf - kzi       
-
-                    if correct:
-                        cos_del = math.cos(del_pix)
-                        sin_del = math.sin(abs(del_pix))                           
-                        #Corrections for 2+2 geometery in horizontal mode
-                        P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
-                        P_vert  = 1 - sin_del*sin_del
-                        pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
-                        #Carea = sin_gam/cos_beta
-                        Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
-
-                        #z-axis
-                        #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
-                        #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
-                        #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
-                        #Carea = math.sin(gam_pix)
-                        #Crod = 1./cos_del
-
-                        Cd = dist**2/SDD**2    
-                        Ci = 1./math.cos(math.atan(delR/SDD)) 
-                        if qx*qx + qy*qy < 0.25:
-                            Lor = 1
-                        else:
-                            Lor = sin_gam*cos_alpha                      
-                      
-                        c_glob[row,col] = abs(pol*Cd*Ci*Lor*Crod)
-
-                    else:
-                        c_glob[row,col] = 1                 
-                
-                    """apply sample rotations to frame of reference
-                    rotations are phi and omega_h which is angle of incidence
-                    this is eqn 44. in ref. 1"""
-                    so = math.sin(rotDirection*(omega_rad+midang))
-                    co = math.cos(rotDirection*(omega_rad+midang))
-                    ci = float(1) #angle of incidence set ealier q calc
-                    si = 0 #angle of incidence set ealier q calc
-
-                    hphi_1 = so*qy+co*qx
-                    hphi_2 = co*qy-so*qx
-                    hphi_3 = ci*qz-si*qy
-
-                    if recp_units == 1:
-                        h=  Binv[0][0]*hphi_1+Binv[0][1]*hphi_2+Binv[0][2]*hphi_3
-                        k = Binv[1][0]*hphi_1+Binv[1][1]*hphi_2+Binv[1][2]*hphi_3
-                        l = Binv[2][0]*hphi_1+Binv[2][1]*hphi_2+Binv[2][2]*hphi_3
-                    else:
-                        h = hphi_1
-                        k = hphi_2
-                        l = hphi_3                           
-
-                    h_glob[row,col] = h
-                    k_glob[row,col] = k
-                    l_glob[row,col] = l
-                    if recp_units == 1 and b1 != b2:
-                        hk_glob[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
-                    elif recp_units == 1 and abs(90 - beta3) > 0.1:
-                        hk_glob[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
-                    else:
-                        hk_glob[row,col] = math.copysign(1,gam_pix)*math.sqrt((h)**2 + (k)**2)                      
-                    
-                
-            h_global_mem  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x)))
-            k_global_mem  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x)))
-            l_global_mem  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x))) 
-            hk_global_mem = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x)))
-            c_global_mem  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x))) #array of pixel intensity corrections           
-
-            # Configure the blocks
-            threadsperblock = (32, 8)
-            blockspergrid_x = int(math.ceil(pixel_count_y / threadsperblock[0]))
-            blockspergrid_y = int(math.ceil(pixel_count_x / threadsperblock[1]))
-            blockspergrid = (blockspergrid_x, blockspergrid_y)
-     
-            detector_to_hkl_kernel[blockspergrid, threadsperblock](h_global_mem,k_global_mem,l_global_mem,hk_global_mem,c_global_mem,midangle)        
-            return [h_global_mem.copy_to_host(),k_global_mem.copy_to_host(),l_global_mem.copy_to_host(),hk_global_mem.copy_to_host(),c_global_mem.copy_to_host()]  
-
-        #this is the none gpu based function 
-        def _dector_frame_to_hkl_frame():
-                h_img = np.zeros((pixel_count_y,pixel_count_x)) 
-                k_img = np.zeros((pixel_count_y,pixel_count_x))
-                l_img = np.zeros((pixel_count_y,pixel_count_x)) 
-                hk_img = np.zeros((pixel_count_y,pixel_count_x))
-                c_img = np.zeros((pixel_count_y,pixel_count_x)) #array of pixel intensity corrections    
-             
-                """Function calculate the pixel positon in lab frame"""
-                for row in range(pixel_count_y):    
-                    for col in range(pixel_count_x):
-                        delta_z= (q0[1]-row)*pixel_y  #real-space dinstance from centre pixel y
-                        delta_x = (col-q0[0])*pixel_x  #real-space dinstance from centre pixel x
-                        delta_x_2 = delta_x*delta_x
-                        delta_z_2 = delta_z*delta_z
-                        delR = math.sqrt(delta_x_2 + delta_z_2)            
-                        dist = math.sqrt(delta_x_2+SDD*SDD + delta_z_2) #distance to pixel
-                        #https://www.classe.cornell.edu/~dms79/D-lineNotes/GISAXS-at-D-line/GIWAXS@D1_Conversions.html
-                        #i.e Smilgies & Blasini, J. Appl. Cryst. 40, 716-718 (2007   
-                        gam_pix  = math.atan(delta_x*invSDD)
-                        del_pix =  math.atan(delta_z/math.sqrt(delta_x_2 + SDD*SDD))        
-                        
-                        cos_gam = math.cos(gam_pix)  
-                        sin_gam = math.sin(gam_pix) 
-                        beta_out = del_pix - angi*cos_gam 
-                        cos_beta = math.cos(beta_out)
-                        sin_beta = math.sin(beta_out)   
-
-                        #scattering vector relative to the surface frame                 
-                        qx = k0*(cos_beta*cos_gam-cos_alpha)                    
-                        qy = k0*(cos_beta*sin_gam) 
-                        qz = k0*(sin_beta+sin_alpha)
-
-                        #refraction correction
-                        # Busch et al., J. Appl. Cryst. 39, 433-442 (2006)
-                        if correct_refraction:
-                            kzi = k0*math.sqrt(abs(sin_alpha*sin_alpha - sin_crtical_angle*sin_crtical_angle))
-                            kzf = k0*math.sqrt(abs(sin_beta*sin_beta - sin_crtical_angle*sin_crtical_angle))
-                            qz = kzf - kzi       
-
-                        if correct:
-                            cos_del = math.cos(del_pix)
-                            sin_del = math.sin(abs(del_pix))                           
-                            #Corrections for 2+2 geometery in horizontal mode
-                            P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
-                            P_vert  = 1 - sin_del*sin_del
-                            pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
-                            #Carea = sin_gam/cos_beta
-                            Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
-
-                            #z-axis
-                            #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
-                            #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
-                            #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
-                            #Carea = math.sin(gam_pix)
-                            #Crod = 1./cos_del
-
-                            Cd = dist**2/SDD**2    
-                            Ci = 1./math.cos(math.atan(delR/SDD)) 
-                            if qx*qx + qy*qy < 0.25:
-                                Lor = 1
-                            else:
-                                Lor = sin_gam*cos_alpha                      
-                        
-                            c_img[row][col] = Lor*Crod*Cd*pol*Ci
-
-                        else:
-                            c_img[row][col] = 1      
-
-                        so = np.sin(rotDirection*(omega_rad+midangle))
-                        co = np.cos(rotDirection*(omega_rad+midangle))
-                        ci = 1
-                        si = 0  
-                        """apply sample rotations to frame of reference
-                            rotations are phi and omega_h which is angle of incidence
-                            this is eqn 44. in ref. 1"""
-
-                        hphi_1 = so*(ci*qy+si*qz)+co*qx
-                        hphi_2 = co*(ci*qy+si*qz)-so*qx
-                        hphi_3 = ci*qz-si*qy  
-
-                        if recp_units == 1:
-                            h=  Binv[0,0]*hphi_1+Binv[0,1]*hphi_2+Binv[0,2]*hphi_3
-                            k = Binv[1,0]*hphi_1+Binv[1,1]*hphi_2+Binv[1,2]*hphi_3
-                            l = Binv[2,0]*hphi_1+Binv[2,1]*hphi_2+Binv[2,2]*hphi_3
-                        else:
-                            h = hphi_1
-                            k = hphi_2
-                            l = hphi_3    
-
-                        h_img[row,col] = h
-                        k_img[row,col] = k
-                        l_img[row,col] = l    
-                        if recp_units == 1 and b1 != b2:
-                            hk_img[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
-                        elif recp_units == 1 and abs(90 - beta3) > 0.1:
-                            hk_img[row,col] = math.copysign(1,gam_pix)*math.sqrt((hphi_1/b1)**2 + (hphi_2/b1)**2)
-                        else:
-
-                            hk_img[row,col] = math.copysign(1,gam_pix)*math.sqrt((h)**2 + (k)**2)         
-                return [h_img,k_img,l_img,hk_img,c_img]
-
-        #use numba on cpu instead
-        if acceleration == 1:
-            if "jit" not in sys.modules:                
-                from numba import jit
-            detector_frame_to_hkl=jit(_dector_frame_to_hkl_frame,nopython=True)
-        else:
-            detector_frame_to_hkl=_dector_frame_to_hkl_frame
-
-        tmp = np.array(detector_frame_to_hkl())
-        return (tmp)  
-
     def projection_binner(self,window,binning,twodetectors,angles,imagedata, qxymax, progress_callback):
         angi=np.deg2rad(self.param('Angle of Incidence').value())
         cos_alpha = math.cos(angi)
@@ -435,6 +166,7 @@ class ExperimentParameter(pTypes.GroupParameter):
         
         gridsize=int(window.p.param('Data Processing', 'Grid Size').value())
         index_offset = int(math.ceil(gridsize/2))
+        
         #currently it is just a square grid so it needs to be big enough        
         invgridstepx = 1/(2*qxymax/gridsize)       
         invgridstepy = 1/(2*qxymax/gridsize)   
@@ -460,11 +192,14 @@ class ExperimentParameter(pTypes.GroupParameter):
                     gam_pix  = math.atan(delta_x*invSDD)
                     del_pix =  math.atan(delta_z/math.sqrt(delta_x_2 + SDD*SDD))        
                     
-                    cos_gam = math.cos(gam_pix)  
-                    sin_gam = math.sin(gam_pix) 
+                    cos_gam = math.cos(abs(gam_pix))  
+                    sin_gam = math.sin(abs(gam_pix)) 
+                    cos_psi = cos_gam
+                    sin_psi = sin_gam
                     beta_out = del_pix - angi*cos_gam 
-                    cos_beta = math.cos(beta_out)
-                    sin_beta = math.sin(beta_out)   
+                    cos_beta = math.cos(abs(beta_out))
+                    sin_beta = math.sin(abs(beta_out))  
+
 
                     #scattering vector relative to the surface frame                 
                     qx = k0*(cos_beta*cos_gam-cos_alpha)                    
@@ -479,26 +214,15 @@ class ExperimentParameter(pTypes.GroupParameter):
                         qz = kzf - kzi       
 
                     if correct:
-
-                        cos_del = math.cos(del_pix)
-                        sin_del = math.sin(abs(del_pix))                           
-                        #Corrections for 2+2 geometery in horizontal mode
-                        P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
-                        P_vert  = 1 - sin_del*sin_del
-                        pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
-                        #Carea = sin_gam/cos_beta
-                        #Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
-
-                        #z-axis
-                        #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
-                        #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
-                        #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
-                        #Carea = math.sin(gam_pix)
-                        #Crod = 1./cos_del
-
+                        #Here we use the geometry independed correction factors from:
+                        #doi.org/10.1063/1.1461876
+                        Cpol = 1/cos_beta*cos_beta*cos_psi*cos_psi+sin_beta*sin_beta
+                        Crod = 1/cos_beta
                         Cd = dist**2/SDD**2    
-                        Ci = 1./math.cos(math.atan(delR/SDD)) 
-                        correction[row,col] = abs(pol*Cd*Ci)
+                        Ci = 1./math.cos(math.atan(delR/SDD))
+                        #For integration around phi
+                        Clor = cos_alpha*sin_psi*cos_beta 
+                        correction[row,col] = Cpol*Crod*Cd*Ci
                     else:
                         correction[row,col] = 1   
 
@@ -579,7 +303,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                                 cuda.atomic.add(histogram_weights,(histx,histy),1)
 
             # Configure the blocks
-            threadsperblock = (32, 8) #could be moved to setting or config file
+            threadsperblock = (16, 8) #could be moved to setting or config file
             blockspergrid_x = int(math.ceil(pixel_count_y / threadsperblock[0]))
             blockspergrid_y = int(math.ceil(pixel_count_x / threadsperblock[1]))
             blockspergrid = (blockspergrid_x, blockspergrid_y)   
@@ -587,11 +311,11 @@ class ExperimentParameter(pTypes.GroupParameter):
             qy_vals = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single))           
             qz_vals  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single)) 
             corrections = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single))
+            #for later
+            histogram_result  = cuda.to_device(np.zeros((gridsize,gridsize),dtype=np.double)) 
+            histogram_weights = cuda.to_device(np.zeros((gridsize,gridsize),dtype=np.double))  
             _lab_frame[blockspergrid, threadsperblock](qx_vals,qy_vals,qz_vals,corrections)            
                      
-            histogram_result  = cuda.to_device(np.zeros((gridsize,gridsize),dtype=np.double)) 
-            histogram_weights = cuda.to_device(np.zeros((gridsize,gridsize),dtype=np.double))            
-
             for i, angle in enumerate(angles):                 
                 if use_raw_files:              
                     #we can also use every pixel but we have to load each image again one at a time
@@ -599,13 +323,16 @@ class ExperimentParameter(pTypes.GroupParameter):
                     tmp = np.ascontiguousarray(np.rot90(window.image_stack.get_image_unbinned(i+from_image)))
                 else:
                     tmp = np.ascontiguousarray(np.rot90(imagedata[i]))
+                    
                 imagei = cuda.to_device(tmp)  
-                window.statusLabel.setText("Calculating angle "+str(i)+" = "+str(angle))  
+                if (i%5==0):
+                    window.statusLabel.setText("Calculating angle "+str(i)+" = "+str(angle))  
                 _bin_kernel[blockspergrid, threadsperblock](imagei, np.deg2rad(angle), histogram_result, histogram_weights,bounds, qx_vals, qy_vals, qz_vals,corrections)
                 if window.single_thread == False:
                     progress_callback.emit(i)  
                 else:
-                    window.progressBar.setValue(i)                            
+                    window.progressBar.setValue(i)   
+                del(imagei)                    
 
             hist = np.asarray(histogram_result.copy_to_host()) 
 
@@ -657,6 +384,7 @@ class ExperimentParameter(pTypes.GroupParameter):
                             P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
                             P_vert  = 1 - sin_del*sin_del
                             pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
+                            L = sin_gam*cos_alpha
                             #Carea = sin_gam/cos_beta
                             #Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
 
@@ -669,7 +397,7 @@ class ExperimentParameter(pTypes.GroupParameter):
 
                             Cd = dist**2/SDD**2 
                             Ci = 1./math.cos(math.atan(delR/SDD)) 
-                            cfac = abs(pol*Cd*Ci)                                                      
+                            cfac = abs(pol*Cd*Ci*L)                                                      
                         else:
                             cfac = 1
 
@@ -765,6 +493,397 @@ class ExperimentParameter(pTypes.GroupParameter):
 
             hist2 = np.divide(final_hist, final_weights, where=final_weights!=0)               
             return hist2    
+    ############################# TESTING #############
+    def projection_binner3d(self,window,binning,twodetectors,angles,imagedata, qxmax, qymax,qzmax,qzmin,  progress_callback):
+        angi=np.deg2rad(self.param('Angle of Incidence').value())
+        cos_alpha = math.cos(angi)
+        sin_alpha = math.sin(angi)  
+
+        omega_rad=np.deg2rad(self.param('Angle offset').value())+np.deg2rad(self.param('Aux Angle offset').value())
+        
+        rotDirection=(self.param('Axis directon').value())
+        use_raw_files= window.p.param('Data Processing', 'Bin From Full Images').value()   
+
+        #some parameters will be different with we don't use the binned data in memory
+        if use_raw_files:
+            pixel_count_x=int(self.param('X Pixels').value())
+            pixel_count_y=int(self.param('Y Pixels').value())
+            if twodetectors:
+                pixel_count_x=int((2*self.param('X Pixels').value()+self.param('Detector Gap (pixels)').value()))
+            q0=np.array([self.param('Center Pixel X').value(),self.param('Center Pixel Y').value()]).copy()
+            pixel_x=self.param('Pixel Size').value()
+            pixel_y=self.param('Pixel Size').value()
+            
+        else:
+            pixel_count_x=int(self.param('X Pixels').value()/binning)
+            pixel_count_y=int(self.param('Y Pixels').value()/binning)
+            if twodetectors:
+                pixel_count_x=int((2*self.param('X Pixels').value()+self.param('Detector Gap (pixels)').value())/binning)
+            q0=np.array([self.param('Center Pixel X').value()/binning,self.param('Center Pixel Y').value()/binning]).copy()
+
+            pixel_x=self.param('Pixel Size').value()*binning
+            pixel_y=self.param('Pixel Size').value()*binning
+
+        acceleration=window.p.param('Data Processing', 'Acceleration').value() 
+        correct_refraction=window.p.param('Data Processing', 'Correct for Refraction').value()
+        correct=window.p.param('Data Processing', 'Apply Intensity Corrections').value()
+        bounds = np.asarray(window.binBounds,dtype=np.single)
+        projection=window.p.param('Data Processing', 'Select Projection').value()
+        
+        angi_c = np.deg2rad(self.param('Critical Angle').value())      
+        sin_crtical_angle = math.sin(angi_c)    
+        from_image = int(np.floor(window.image_stack.angle2image(window.angleRegion.getRegion()[0])))
+
+        SDD=self.param('Sample-Detector Dist.').value()
+        invSDD=1/self.param('Sample-Detector Dist.').value()        
+        k0=(np.pi*2)/self.param('Wavelength').value()
+        p_h=self.param('Horizontal Polarisation').value()
+        Binv=window.crystal.calcBInv()
+        recp_units=window.crystal.param('Reciprocal Units').value()
+        
+        gridsize=int(window.p.param('Data Processing', 'Grid Size').value())
+
+        #minium and maxium values of ROI
+        xmax = window.xmax
+        xmin = window.xmin
+        ymax = window.ymax
+        ymin = window.ymin
+        print(xmin,xmax,ymin,ymax)
+        #value of one index (or voxel) in each direction
+        gridstepx = (xmax-xmin)/gridsize
+        gridstepy = (ymax-ymin)/gridsize
+        gridstepz = (qzmax-qzmin)/gridsize
+
+        #we add some padding incase of any rounding errors so we don't cause overflow
+        xmax = float(window.xmax + 2*gridstepx)
+        xmin = float(window.xmin - 2*gridstepx)
+        ymax = float(window.ymax + 2*gridstepy)
+        ymin = float(window.ymin - 2*gridstepy)
+
+        #We recalucated the stepsize given we have increased the range
+        gridstepx = (xmax-xmin)/gridsize
+        gridstepy = (ymax-ymin)/gridsize
+        gridstepz = (qzmax-qzmin)/gridsize
+        
+        #the inverses of the the stepsizes to avoid division later on       
+        invgridstepx = 1/gridstepx     
+        invgridstepy = 1/gridstepy
+        invgridstepz = 1/gridstepz
+
+        print(gridstepx,gridstepy,gridstepz)
+        print(xmin,xmax,ymin,ymax)
+        
+ 
+        if  acceleration==2:
+            if "cuda" not in sys.modules:
+                from numba import cuda  
+
+            @cuda.jit(fastmath=True)
+            def  _lab_frame(qx_vals,qy_vals,qz_vals,correction):
+                """Calcuation the lab/surface frame, it is constant so only need to calc once"""
+                #get the current thread position
+                row,col = cuda.grid(2)
+                if row < pixel_count_y and col < pixel_count_x:
+                    delta_z= (q0[1]-row)*pixel_y  #real-space dinstance from centre pixel y
+                    delta_x = (col-q0[0])*pixel_x  #real-space dinstance from centre pixel x
+                    delta_x_2 = delta_x*delta_x
+                    delta_z_2 = delta_z*delta_z
+                    delR = math.sqrt(delta_x_2 + delta_z_2)            
+                    dist = math.sqrt(delta_x_2+SDD*SDD + delta_z_2) #distance to pixel
+                    #https://www.classe.cornell.edu/~dms79/D-lineNotes/GISAXS-at-D-line/GIWAXS@D1_Conversions.html
+                    #i.e Smilgies & Blasini, J. Appl. Cryst. 40, 716-718 (2007   
+                    gam_pix  = math.atan(delta_x*invSDD)
+                    del_pix =  math.atan(delta_z/math.sqrt(delta_x_2 + SDD*SDD))        
+                    
+                    cos_gam = math.cos(gam_pix)  
+                    sin_gam = math.sin(gam_pix) 
+                    beta_out = del_pix - angi*cos_gam 
+                    cos_beta = math.cos(beta_out)
+                    sin_beta = math.sin(beta_out)   
+
+                    #scattering vector relative to the surface frame                 
+                    qx = k0*(cos_beta*cos_gam-cos_alpha)                    
+                    qy = k0*(cos_beta*sin_gam) 
+                    qz = k0*(sin_beta+sin_alpha)
+
+                    #refraction correction
+                    # Busch et al., J. Appl. Cryst. 39, 433-442 (2006)
+                    if correct_refraction:
+                        kzi = k0*math.sqrt(abs(sin_alpha*sin_alpha - sin_crtical_angle*sin_crtical_angle))
+                        kzf = k0*math.sqrt(abs(sin_beta*sin_beta - sin_crtical_angle*sin_crtical_angle))
+                        qz = kzf - kzi       
+
+                    if correct:
+
+                        cos_del = math.cos(del_pix)
+                        sin_del = math.sin(abs(del_pix))                           
+                        #Corrections for 2+2 geometery in horizontal mode
+                        P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
+                        P_vert  = 1 - sin_del*sin_del
+                        pol = 1./(p_h*P_hor + (1-p_h)*P_vert)       
+                        L = sin_gam*cos_alpha              
+                        #Carea = sin_gam/cos_beta
+                        Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
+
+                        #z-axis
+                        #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
+                        #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
+                        #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
+                        #Carea = math.sin(gam_pix)
+                        #Crod = 1./cos_del
+
+                        Cd = dist**2/SDD**2    
+                        Ci = 1./math.cos(math.atan(delR/SDD)) 
+                        correction[row,col] = abs(pol*Cd*Ci)
+                    else:
+                        correction[row,col] = 1   
+
+                    qx_vals[row,col] = qx
+                    qy_vals[row,col] = qy
+                    qz_vals[row,col] = qz
+
+            @cuda.jit(fastmath=True)
+            def  _bin_kernel(image, midang, histogram_result,histogram_weights,bin_bounds, qx, qy, qz,correction,xmin,ymin,zmin):               
+                """This function rotates the surface frame based on the rotation of the sample around 
+                its surface normal and then bins the intensity in a grid. It is mostly slowed down by
+                transfering the detector image to the graphics memory"""
+                row,col = cuda.grid(2)
+                if row < image.shape[0] and col < image.shape[1]:
+                    delta_x = (col-q0[0])*pixel_x
+                    so = math.sin(rotDirection*(omega_rad+midang))
+                    co = math.cos(rotDirection*(omega_rad+midang))
+                    qy = qy[row,col]
+                    qx = qx[row,col]
+                    qz = qz[row,col]
+
+                    #we deal with the angle of incidence earlier
+                    ci = 1
+                    si = 0  
+
+                    hphi_1 = so*(ci*qy+si*qz)+co*qx
+                    hphi_2 = co*(ci*qy+si*qz)-so*qx
+                    hphi_3 = ci*qz-si*qy  
+
+                    #hphi_1 = so*qy[row,col]+co*qx[row,col]
+                    #hphi_2 = co*qy[row,col]-so*qx[row,col]
+                    #hphi_3 = qz[row,col]
+
+                    if recp_units == 1:
+                        h=  Binv[0][0]*hphi_1+Binv[0][1]*hphi_2+Binv[0][2]*hphi_3
+                        k = Binv[1][0]*hphi_1+Binv[1][1]*hphi_2+Binv[1][2]*hphi_3
+                        l = Binv[2][0]*hphi_1+Binv[2][1]*hphi_2+Binv[2][2]*hphi_3
+                    else:
+                        h = hphi_1
+                        k = hphi_2
+                        l = hphi_3                  
+ 
+                    xbound = h
+                    ybound = k
+                    xcord = h
+                    ycord = k    
+                    zcord = l                      
+
+                    #qr = math.sqrt(h**2 + k**2)*math.copysign(1,gam_pix)
+                    for bound_index in range(len(bin_bounds)):                            
+                        if xbound > bin_bounds[bound_index][0] and xbound < bin_bounds[bound_index][1]:   
+                            if ybound > bin_bounds[bound_index][2] and ybound < bin_bounds[bound_index][3]:                         
+                                histx = int((xcord-xmin)*invgridstepx)
+                                histy = int((ycord-ymin)*invgridstepy)
+                                histz = int((zcord-zmin)*invgridstepz)
+                                intensity = image[row,col]*correction[row,col]
+                                cuda.atomic.add(histogram_result,(histx,histy,histz),intensity)
+                                cuda.atomic.add(histogram_weights,(histx,histy,histz),1)
+
+            # Configure the blocks
+            threadsperblock = (16, 8) #could be moved to setting or config file
+            blockspergrid_x = int(math.ceil(pixel_count_y / threadsperblock[0]))
+            blockspergrid_y = int(math.ceil(pixel_count_x / threadsperblock[1]))
+            blockspergrid = (blockspergrid_x, blockspergrid_y)   
+            qx_vals  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single)) 
+            qy_vals = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single))           
+            qz_vals  = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single)) 
+            corrections = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single))
+            #for later
+            histogram_result  = cuda.to_device(np.zeros((gridsize,gridsize,gridsize),dtype=np.double)) 
+            histogram_weights = cuda.to_device(np.zeros((gridsize,gridsize,gridsize),dtype=np.double))  
+            _lab_frame[blockspergrid, threadsperblock](qx_vals,qy_vals,qz_vals,corrections)            
+                     
+            for i, angle in enumerate(angles):                 
+                if use_raw_files:              
+                    #we can also use every pixel but we have to load each image again one at a time
+                    #however we should not keep them all in memory.       
+                    tmp = np.ascontiguousarray(np.rot90(window.image_stack.get_image_unbinned(i+from_image)))
+                else:
+                    tmp = np.ascontiguousarray(np.rot90(imagedata[i]))
+                    
+                imagei = cuda.to_device(tmp)  
+                if (i%5==0):
+                    window.statusLabel.setText("Calculating angle "+str(i)+" = "+str(angle))  
+                _bin_kernel[blockspergrid, threadsperblock](imagei, np.deg2rad(angle), histogram_result, histogram_weights,bounds, qx_vals, qy_vals, qz_vals,corrections,xmin,ymin,qzmin)
+
+                window.progressBar.setValue(i)   
+                del(imagei)                    
+
+            hist = np.asarray(histogram_result.copy_to_host()) 
+
+            #normalise the histogram   
+            weight = np.asarray(histogram_weights.copy_to_host())     
+            hist2 = np.divide(hist, weight, where=weight!=0)                   
+            return hist2
+
+        else:     
+            def _binner(image, angle):
+                hist = np.zeros((gridsize,gridsize),dtype=np.single)
+                weights = np.zeros((gridsize,gridsize),dtype=np.single) 
+                """Function calculate the pixel positon in lab frame"""
+                for row in range(pixel_count_y):    
+                    for col in range(pixel_count_x):
+                        delta_z= (q0[1]-row)*pixel_y  #real-space dinstance from centre pixel y
+                        delta_x = (col-q0[0])*pixel_x  #real-space dinstance from centre pixel x
+                        delta_x_2 = delta_x*delta_x
+                        delta_z_2 = delta_z*delta_z
+                        delR = math.sqrt(delta_x_2 + delta_z_2)            
+                        dist = math.sqrt(delta_x_2+SDD*SDD + delta_z_2) #distance to pixel
+                        #https://www.classe.cornell.edu/~dms79/D-lineNotes/GISAXS-at-D-line/GIWAXS@D1_Conversions.html
+                        #i.e Smilgies & Blasini, J. Appl. Cryst. 40, 716-718 (2007   
+                        gam_pix  = math.atan(delta_x*invSDD)
+                        del_pix =  math.atan(delta_z/math.sqrt(delta_x_2 + SDD*SDD))        
+                        
+                        cos_gam = math.cos(gam_pix)  
+                        sin_gam = math.sin(gam_pix) 
+                        beta_out = del_pix - angi*cos_gam 
+                        cos_beta = math.cos(beta_out)
+                        sin_beta = math.sin(beta_out)   
+
+                        #scattering vector relative to the surface frame                 
+                        qx = k0*(cos_beta*cos_gam-cos_alpha)                    
+                        qy = k0*(cos_beta*sin_gam) 
+                        qz = k0*(sin_beta+sin_alpha)
+
+                        #refraction correction
+                        # Busch et al., J. Appl. Cryst. 39, 433-442 (2006)
+                        if correct_refraction:
+                            kzi = k0*math.sqrt(abs(sin_alpha*sin_alpha - sin_crtical_angle*sin_crtical_angle))
+                            kzf = k0*math.sqrt(abs(sin_beta*sin_beta - sin_crtical_angle*sin_crtical_angle))
+                            qz = kzf - kzi       
+
+                        if correct:
+                            cos_del = math.cos(del_pix)
+                            sin_del = math.sin(abs(del_pix))                           
+                            #Corrections for 2+2 geometery in horizontal mode
+                            P_hor = 1. - cos_del*cos_del*sin_gam*sin_gam
+                            P_vert  = 1 - sin_del*sin_del
+                            pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                     
+                            L = sin_gam*cos_alpha
+                            #Carea = sin_gam/cos_beta
+                            #Crod = (math.sin(angi-del_pix)*math.sin(angi-del_pix)*cos_gam + cos_alpha*math.cos(angi-del_pix))/cos_alpha
+
+                            #z-axis
+                            #P_hor = 1. - (sin_alpha*cos_del*cos_gam+cos_alpha*sin_gam)**2
+                            #P_vert  = 1 - (cos_gam**cos_gam*sin_del*sin_del)                     
+                            #pol = 1./(p_h*P_hor + (1-p_h)*P_vert)                                            
+                            #Carea = math.sin(gam_pix)
+                            #Crod = 1./cos_del
+
+                            Cd = dist**2/SDD**2 
+                            Ci = 1./math.cos(math.atan(delR/SDD)) 
+                            cfac = abs(pol*Cd*Ci*L)                                                      
+                        else:
+                            cfac = 1
+
+
+                        so = np.sin(rotDirection*(omega_rad+angle))
+                        co = np.cos(rotDirection*(omega_rad+angle))
+                        ci = 1
+                        si = 0  
+                        """apply sample rotations to frame of reference
+                            rotations are phi and omega_h which is angle of incidence
+                            this is eqn 44. in ref. 1"""
+
+                        hphi_1 = so*(ci*qy+si*qz)+co*qx
+                        hphi_2 = co*(ci*qy+si*qz)-so*qx
+                        hphi_3 = ci*qz-si*qy  
+
+                        if recp_units == 1:
+                            h=  Binv[0,0]*hphi_1+Binv[0,1]*hphi_2+Binv[0,2]*hphi_3
+                            k = Binv[1,0]*hphi_1+Binv[1,1]*hphi_2+Binv[1,2]*hphi_3
+                            l = Binv[2,0]*hphi_1+Binv[2,1]*hphi_2+Binv[2,2]*hphi_3
+                        else:
+                            h = hphi_1
+                            k = hphi_2
+                            l = hphi_3
+
+                        #Now we we have the coordinates of our pixel we need to decide which bin to put it
+                        #Projection 0: hk - we assume the bounds correspond qr and l 
+                        if projection == 0:                                           
+                            xbound = math.sqrt(h**2 + k**2)*math.copysign(1,gam_pix)
+                            ybound = l
+                            xcord = h
+                            ycord = k
+                        #Projection 1: h-l, this is selected from an in-plane map so should be h k, and output to h and l
+                        elif projection == 1:                        
+                            xbound = h
+                            ybound = k
+                            xcord = h
+                            ycord = l
+                        
+                        #Projection 2: k-l, this is selected from an in-plane map so should be h k, and output to k and l
+                        elif projection == 2:
+                            xbound = h
+                            ybound = k
+                            xcord = k
+                            ycord = l
+                        #Projection 3: qr-l, this is selected from an in-plane map so should be h k, and output to qr and l
+                        else:
+                            xbound = h
+                            ybound = k
+                            xcord = math.sqrt(h**2 + k**2)
+                            ycord = l
+
+                            
+                        #qr = math.sqrt(h**2 + k**2)*math.copysign(1,gam_pix)
+                        for bound_index in range(len(bounds)):                            
+                            if xbound > bounds[bound_index][0] and xbound < bounds[bound_index][1]:   
+                                if ybound > bounds[bound_index][2] and ybound < bounds[bound_index][3]:                         
+                                    histx = int(round(xcord-xmin*invgridstepx))
+                                    histy = int(round(ycord-ymin*invgridstepy))
+                                    intensity = image[row][col]*cfac
+                                    hist[histx][histy] += intensity
+                                    weights[histx][histy] += 1
+
+                return hist,weights  
+
+            #use numba on cpu instead
+            if acceleration == 1:
+                if "jit" not in sys.modules:                
+                    from numba import jit                        
+                binner = jit(_binner,nopython=True)
+            else:
+                print("This is probably really slow, you should try Numba or even better the GPU mode")
+                binner =_binner
+
+            final_hist = np.zeros((gridsize,gridsize),dtype=np.single)
+            final_weights = np.zeros((gridsize,gridsize),dtype=np.single) 
+
+            for i, angle in enumerate(angles): 
+                window.statusLabel.setText("Calculating angle "+str(i)+" = "+str(angle))  
+                if use_raw_files:           
+                    image = np.rot90(window.image_stack.get_image_unbinned(i+from_image))  
+                else:
+                    image = np.rot90(imagedata[i])                    
+
+                image_bin,image_weights = binner(image,np.deg2rad(angle))
+                final_hist= final_hist + image_bin
+                final_weights = final_weights + image_weights
+
+                if window.single_thread == False:
+                    progress_callback.emit(i)  
+                else:
+                    window.progressBar.setValue(i)                          
+
+            hist2 = np.divide(final_hist, final_weights, where=final_weights!=0)               
+            return hist2    
+
 
 
     def getLambda(self,energy):
@@ -787,7 +906,6 @@ class ExperimentParameter(pTypes.GroupParameter):
         self.addChild({'name': 'Energy', 'type': 'float', 'value': 67000,'siPrefix': True, 'suffix': 'eV', 'step': 100})
         self.addChild({'name': 'Wavelength', 'type': 'float', 'value': 1., 'suffix': 'Å', 'step': 0.001})
         self.addChild({'name': 'Sample-Detector Dist.', 'type': 'float', 'value': 1.26, 'suffix': 'm', 'siPrefix': True, 'step': 0.0001,'dec': True})
-        self.addChild({'name': 'Horizontal Polarisation', 'type': 'float', 'value': 0.98})
         
         self.addChild({'name': 'Center Pixel X', 'type': 'int', 'value': 1424, 'step': 1})
         self.addChild({'name': 'Center Pixel Y', 'type': 'int', 'value': 2730, 'step': 1})

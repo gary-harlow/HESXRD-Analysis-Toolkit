@@ -1,0 +1,35 @@
+[project]
+name = "xray-hat"
+version = "2.0.0"
+description = "Software for the analysis of high-energy surface x-ray diffraction data"
+authors = [
+    "Gary Harlow <gary.harlow@mau.se>",
+    "Sebastian Pfaff sebastian.pfaff@forbrf.lth.se>"
+]
+
+license = "MIT"
+readme = "README.md"
+python = "^3.8"
+
+homepage = "https://github.com/gary-harlow/HESXRD-Analysis-Toolkit"
+
+# Requirements
+[dependencies]
+PyQt6 = "^6.3.1"
+pyqtgraph = "^0.12.4"
+scipy = "^1.5.4"
+numba = "^0.51.2"
+numpy = "^1.19.3"
+h5py = "^3.1.0"
+hdf5plugin = "^2.3.1"
+fabio= "^0.10.2"
+natsort= "^8.1.0"
+mayavi= "^4.7.4"
+
+
+
+[build-system]
+# These are the assumed default build requirements from pip:
+# https://pip.pypa.io/en/stable/reference/pip/#pep-517-and-518-support
+requires = ["setuptools>=50.0.0", "wheel"]
+build-backend = "setuptools.build_meta"

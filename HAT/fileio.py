@@ -1,24 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from logging import exception
 import numpy as np
-from PyQt5.QtWidgets import QMessageBox
-import pyqtgraph.parametertree.parameterTypes as pTypes
-import pyqtgraph as pg
-from pyqtgraph.parametertree import Parameter, ParameterTree, ParameterItem, registerParameterType
-from PyQt5.QtWidgets import QApplication, QWidget, QInputDialog, QLineEdit, QFileDialog, QCheckBox, QProgressBar
-from PyQt5.QtGui import QIcon, QPixmap
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtWidgets import QMainWindow, QLabel, QGridLayout, QWidget,QPushButton,QInputDialog,QListWidget,QListWidgetItem
-from PyQt5.QtCore import QSize, Qt, QObject, QThread, pyqtSignal,QRunnable,pyqtSlot,QThreadPool
+from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QInputDialog, QFileDialog
+from PyQt6.QtCore import QObject, pyqtSignal,QRunnable,pyqtSlot
 import fabio
-#import h5py
-#import hdf5plugin
-import pickle
+import h5py
+import hdf5plugin
 import util
 from scipy import interpolate
-import copy
-from time import sleep
 import natsort as ns
 import traceback,sys
 
@@ -284,8 +274,7 @@ class ImageStack():
             self.__update_params()
             print(description,dictionary_prefix)
             if not filename:
-                options = QFileDialog.Options()
-                self.aux_file_names[dictionary_prefix + ' 1'], _ = QFileDialog.getOpenFileName(self.window, description +' 1',"","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options) 
+                self.aux_file_names[dictionary_prefix + ' 1'], _ = QFileDialog.getOpenFileName(self.window, description +' 1',"","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)") 
             else:
                 self.aux_file_names[dictionary_prefix + ' 1'] = filename
 
@@ -295,7 +284,7 @@ class ImageStack():
             #For 2nd detector
             if self.two_detectors:
                 if not filename2:
-                    self.aux_file_names[dictionary_prefix + ' 2'], _ = QFileDialog.getOpenFileName(self.window, description +' 2',"","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options)   
+                    self.aux_file_names[dictionary_prefix + ' 2'], _ = QFileDialog.getOpenFileName(self.window, description +' 2',"","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)")   
                     if self.aux_file_names[dictionary_prefix + ' 2'] == None:
                         QMessageBox.about(self, "You have two detectors selected but only selected one image", "Warning")
                         self.file_error = True  
@@ -360,8 +349,8 @@ class ImageStack():
 
     def select_dark(self, paramHandle, filename=None, filename2=None):
         if type(paramHandle) == str:
-            filename =  filename
-            filename2 =  paramHandle
+            filename2 =  filename
+            filename =  paramHandle
         """Call this to select a dark image"""
         self.__select_aux_image("Choose dark image for detector ", 'dark image',filename, filename2)    
     
@@ -369,13 +358,14 @@ class ImageStack():
         if type(paramHandle) == list:
             files2 =  files
             files =  paramHandle
+        print(files)
+        print(paramHandle)
         """Choose the image data"""
         self.__update_params()
         #This assumes with have TIF file, it will ignore anything containing .dark (i.e. for P07)
         if self.beamline != 4:
             if not files:
-                options = QFileDialog.Options()
-                files, _ = QFileDialog.getOpenFileNames(self.window,"Select images to use", "","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options)
+                files, _ = QFileDialog.getOpenFileNames(self.window,"Select images to use", "","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)")
             if files:
                 self.image_file_names_1 = []
                 for file_name in files:
@@ -385,9 +375,8 @@ class ImageStack():
                 self.images_read = True 
                 
             if self.two_detectors:
-                if not files2:
-                    options2 = QFileDialog.Options()
-                    files2, _ = QFileDialog.getOpenFileNames(self.window,"Select right detector images to use", "","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)", options=options2)  
+                if not files2:                    
+                    files2, _ = QFileDialog.getOpenFileNames(self.window,"Select right detector images to use", "","Image Files (*.tif *.tiff *.cbf *.edf);;All Files (*)")  
                 if files2:
                     self.image_file_names_2 = []
                     for file_name in files2:
@@ -401,9 +390,8 @@ class ImageStack():
             #in this case we use the HDF5 file format from the ESRF - Nov 2020
             #since dual detectors is not an option here it is not supported but 
             #should be simple to change in the future
-            if not files:
-                options = QFileDialog.Options()
-                self.hdf5_file_name, _ = QFileDialog.getOpenFileName(self.window,"Select HDF5 file to use", "","HDF5 File (*.h5);;All Files (*)", options=options)
+            if not files:               
+                self.hdf5_file_name, _ = QFileDialog.getOpenFileName(self.window,"Select HDF5 file to use", "","HDF5 File (*.h5);;All Files (*)")
             else:
                 self.hdf5_file_name = files
             if self.hdf5_file_name:
@@ -512,7 +500,7 @@ class ImageStack():
         self.window.progressBar.setValue(n)
         if n == 1:
              self.window.loadUpdate(n)
-        if n!= 0 and n%40 == 0:
+        if n!= 0 and n%100 == 0:
             self.window.loadUpdate(n)
 
     def thread_complete(self):
@@ -588,9 +576,8 @@ class ImageStack():
         self.__update_params()
         #p21.2 - 2020
         if self.beamline == 2 or self.beamline == 1 or self.beamline== 7:  
-            if not filename:      
-                options = QFileDialog.Options()
-                self.log_file_name, _ = QFileDialog.getOpenFileName(self.window,"Select log file to use", "","Log Files (*.fio);;All Files (*)", options=options)     
+            if not filename:                 
+                self.log_file_name, _ = QFileDialog.getOpenFileName(self.window,"Select log file to use", "","Log Files (*.fio);;All Files (*)")     
             else:
                self.log_file_name = filename 
         elif self.beamline == 4:
@@ -775,8 +762,14 @@ class ImageStack():
                 self.end_angle=all_angles[0]
                 self.image_data = np.flip(self.image_data, axis=0) 
         if self.beamline == 5:
+
+
             self.start_angle= float(self.window.p.param('Experiment', 'Manual Start Angle').value())
             self.end_angle= float(self.window.p.param('Experiment', 'Manual End Angle').value())
+            if self.start_angle > self.end_angle:
+                self.start_angle,self.end_angle = self.end_angle, self.start_angle
+                flip = True
+                self.image_data = np.flip(self.image_data, axis=0) 
 
         self.angle2image=interpolate.interp1d((self.start_angle,self.end_angle),(0,self.number_of_images))
         self.angle_mode = True 
