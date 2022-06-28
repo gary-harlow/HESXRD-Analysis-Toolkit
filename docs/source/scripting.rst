@@ -1,4 +1,7 @@
+Scripting
 =====================================
-Learn with an example dataset
-=====================================
-Let's learn by example, this is a coming feature
+
+Here will be documentation about the internal functions
+that are useful for scripting. Scripts are typically executed through
+the script.py interface.
+

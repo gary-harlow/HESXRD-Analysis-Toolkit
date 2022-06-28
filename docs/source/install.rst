@@ -46,7 +46,6 @@ Download the source files from GitHub yourself 'here <https://github.com/gary-ha
 
 Then make sure you have all the required packages and versions that are listed in the pyproject.toml file. 
 
-That's it!
-==========
 
+That's it!
 That's it -- you can now :doc:`move onto the tutorial </tutorial>`.

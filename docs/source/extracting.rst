@@ -1,4 +1,4 @@
+Extracting CTRs
 =====================================
-Learn with an example dataset
-=====================================
-Let's learn by example, this is a coming feature
+
+Here will following a guide on different methods of extracting CTRs

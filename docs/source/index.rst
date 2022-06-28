@@ -17,17 +17,7 @@ Contents
    scripting
    plotting
    extracting
-
-
-First steps
-------------
-
-:doc:`Overview <overview>` 
-
-:doc:`Installation <install>`
-
-:doc:`Tutorial using example data <tutorial>`
-
+   screenshots
 
 Getting help
 ------------

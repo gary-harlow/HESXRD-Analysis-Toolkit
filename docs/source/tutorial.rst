@@ -1,4 +1,5 @@
+Begginer tutorial
 =====================================
-Learn with an example dataset
-=====================================
-Let's learn by example, this is a coming feature
+
+Let's learn by example.
+Document is coming soon.
