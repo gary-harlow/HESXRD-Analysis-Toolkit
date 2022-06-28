@@ -507,21 +507,22 @@ class MainWindow(QMainWindow):
         """Function to display and about help dialog"""
         d = QDialog()
         d.setWindowTitle("About")
-        d.setFixedSize(500,160)
+        d.setFixedSize(500,210)
 
-        t1 = QLabel("HESXRD Analysis Toolkit.\n\n(c) 2021 Gary Harlow. \n\nFree to use under MIT License\n\nCreated by Gary Harlow and Sebastian Pfaff at Lund University, Sweden ",d)        
+        t1 = QLabel("HESXRD Analysis Toolkit.(c) 2021 Gary Harlow. \n\nFree to use under MIT License\n\nCreated by Gary Harlow and Sebastian Pfaff",d)        
         t1.setWordWrap(True)
 
         t2 = QLabel(d)             
-        t2.setText('<a href="https://github.com/gary-harlow/HESXRD-Analysis-Toolkit">Goto GitHuB Page</a>')
+        t2.setText('<a href="https://github.com/gary-harlow/HESXRD-Analysis-Toolkit">Link to GitHub Page</a>')
         t2.setOpenExternalLinks(True)
 
         t3 = QLabel(d)
-        t3.setText('Eventually a link to a readthedocs.io page will come here')
+        t3.setText('<a href="https://xray-hat.readthedocs.io/en/latest">Link to Documentation</a>')
+        t3.setOpenExternalLinks(True)
 
         t1.move(20,2)
-        t2.move(20,100)
-        t3.move(20,130)
+        t2.move(20,150)
+        t3.move(20,170)
         
         d.exec()
         
