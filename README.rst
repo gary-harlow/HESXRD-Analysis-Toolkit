@@ -1,9 +1,9 @@
-======
-HAT: HESXRD-Analysis-Toolkit (xray-hat)
-======
+========================================
+HAT: HESXRD-Analysis-Toolkit (xrayhat)
+========================================
 
 HAT is a Software package for the analysis of high-energy surface x-ray diffraction data.
-This softwares allows one to extract meaningful data from stacks of images such as those
+This software allows one to extract meaningful data from stacks of images such as those
 produced in high-energy-surface x-ray diffraction experiements.
 
 It is designed to be user-friendly and fairly quick so that it can be easily used during an experiment
