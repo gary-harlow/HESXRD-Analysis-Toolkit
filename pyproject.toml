@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xrayhat"
-version = "2.0.1"
+version = "2.0.2"
 description = "Software for the analysis of high-energy surface x-ray diffraction data"
 authors = [{ name = "Gary Harlow", email = "gsharlow@gmail.com" },
            { name = "Sebastian Pfaff", email = "sebastian.pfaff@forbrf.lth.se" }]
@@ -21,17 +21,17 @@ readme = "README.rst"
 requires-python = ">=3.8"
 
 # Requirements
-[dependencies]
-PyQt6 = ">=6.3.1"
-pyqtgraph = ">=0.12.4"
-scipy = ">=1.5.4"
-numba = ">=0.51.2"
-numpy = ">=1.19.3"
-h5py = ">=3.1.0"
-hdf5plugin = ">=2.3.1"
-fabio= ">=0.10.2"
-natsort= ">=8.1.0"
-mayavi= ">=4.7.4"
+dependencies = [
+"PyQt6>=6.3.1",
+"pyqtgraph>=0.12.4",
+"scipy>=1.5.4",
+"numba>=0.51.2",
+"numpy>=1.19.3",
+"h5py>=3.1.0",
+"hdf5plugin>=2.3.1",
+"fabio>=0.10.2",
+"natsort>=8.1.0",
+"mayavi>=4.7.4"]
 
 [project.urls]
 homepage = "https://github.com/gary-harlow/HESXRD-Analysis-Toolkit"
