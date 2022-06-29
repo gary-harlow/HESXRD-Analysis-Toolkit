@@ -7,7 +7,7 @@ from PyQt6.QtCore import QObject, pyqtSignal,QRunnable,pyqtSlot
 import fabio
 import h5py
 import hdf5plugin
-import util
+from xrayhat import util
 from scipy import interpolate
 import natsort as ns
 import traceback,sys

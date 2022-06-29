@@ -3,12 +3,12 @@
 import numpy as np
 from scipy import interpolate
 import pickle
-import fileio
 import importlib
 
 import locale
 locale.setlocale(locale.LC_ALL, '')
 from locale import atof
+import pkg_resources
 
 from PyQt6.QtCore import QSize, QThreadPool
 from PyQt6.QtGui import QAction, QIcon,QDoubleValidator,QTransform
@@ -28,14 +28,14 @@ from pyqtgraph.parametertree import Parameter, ParameterTree
 import pyqtgraph as pg
 
 #import various modules
-import plotting
-import script
-from crystal import *
-import fileio
-import binner as proj
-import chi2theta
-from transformdet import *
-import scene3d
+from xrayhat import  plotting
+from xrayhat import script
+from xrayhat.crystal import *
+from xrayhat import fileio
+import xrayhat.binner as proj
+from xrayhat import chi2theta
+from xrayhat.transformdet import *
+from xrayhat import scene3d
 
 
 class MainWindow(QMainWindow):
@@ -200,24 +200,25 @@ class MainWindow(QMainWindow):
         self.toolbar.setIconSize(QSize(32, 32))
         self.addToolBar(self.toolbar)
         
+        icons = pkg_resources.resource_filename('xrayhat', 'icons/')
         
         addMask = self.toolbar.addAction("Add Mask")
-        addMask.setIcon(QIcon("icons/addmask.svg"))
+        addMask.setIcon(QIcon(icons+"addmask.svg"))
         addMask.setStatusTip("Add a new mask to the current view")
         addMask.triggered.connect(self.addMask)
         
         saveMask = self.toolbar.addAction("Save Masks")
-        saveMask.setIcon(QIcon("icons/savemask.svg"))
+        saveMask.setIcon(QIcon(icons+"savemask.svg"))
         saveMask.setStatusTip("Save masks across all views to a file")
         saveMask.triggered.connect(self.saveMasks)
-        
+                        
         loadMask = self.toolbar.addAction("Load Masks")
-        loadMask.setIcon(QIcon("icons/loadmask.svg"))
+        loadMask.setIcon(QIcon(icons+"loadmask.svg"))
         loadMask.setStatusTip("Load masks (possibly for multiple views) from a file, current masks are not cleared")
         loadMask.triggered.connect(self.loadMasks)
         
         clearMask = self.toolbar.addAction("Clear Masks")
-        clearMask.setIcon(QIcon("icons/clearmask.svg"))
+        clearMask.setIcon(QIcon(icons+"clearmask.svg"))
         clearMask.setStatusTip("Clear Masks across all views")
         clearMask.triggered.connect(self.clearMasks)
         
@@ -228,24 +229,29 @@ class MainWindow(QMainWindow):
 
         
         tglROI = self.toolbar2.addAction("Toogle ROI")
-        tglROI.setIcon(QIcon("icons/roi.svg"))
+        tglROI.setIcon(QIcon(icons+"roi.svg"))
         tglROI.triggered.connect(self.setProfile)
+        tglROI.setStatusTip("Switch box profile on and off")
 
         loadROI = self.toolbar2.addAction("Load ROI")
-        loadROI.setIcon(QIcon("icons/loadroi.svg"))
+        loadROI.setIcon(QIcon(icons+"loadroi.svg"))
         loadROI.triggered.connect(self.loadroi)
+        loadROI.setStatusTip("Load the position and shape of a previous box profile")
 
         saveROI = self.toolbar2.addAction("Save ROI")
-        saveROI.setIcon(QIcon("icons/saveroi.svg"))
+        saveROI.setIcon(QIcon(icons+"saveroi.svg"))
         saveROI.triggered.connect(self.saveroi)
+        saveROI.setStatusTip("Save the current box profile position and shape to a file")
 
         extractROI =self.toolbar2.addAction("Extract ROI")
-        extractROI.setIcon(QIcon("icons/extractroi.svg"))
+        extractROI.setIcon(QIcon(icons+"extractroi.svg"))
         extractROI.triggered.connect(self.saveprofile)
+        extractROI.setStatusTip("Save the data from the profile to a file")
 
         extractRock = self.toolbar2.addAction("Extract Rocking Scans")
-        extractRock.setIcon(QIcon("icons/rockingscan.svg"))
+        extractRock.setIcon(QIcon(icons+"rockingscan.svg"))
         extractRock.triggered.connect(self.saverocks)  
+        extractRock.setStatusTip("Save rocking scans (as a function of angle) for each pixel along the profile")
         
         #button_action = QAction(QIcon("bug.png"), "&Your button", self)
         #button_action.setStatusTip("This is your button")

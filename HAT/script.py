@@ -7,7 +7,7 @@ from http.client import REQUEST_URI_TOO_LONG
 import numpy as np
 import math
 import time
-from fileio import *
+from xrayhat.fileio import *
 import mayavi.mlab as mlab
 
 

@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 import sys
 from PyQt6.QtWidgets import QApplication
-import interface
+from xrayhat import interface
+
 
 def main():  
     app = QApplication(sys.argv)
