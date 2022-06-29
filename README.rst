@@ -13,3 +13,5 @@ Thanks for checking it out.
 All documentation is in the "``docs``" directory and online at
 https://xray-hat.readthedocs.io/en/latest/. 
 
+Basic Installation:
+pip install xrayhat
