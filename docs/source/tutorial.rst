@@ -128,8 +128,9 @@ On windows or an anaconda installation it will be somewhere else. The easiest wa
     >>> xrayhat.__file__
     '/home/garyh/pyenvs/hat/lib/python3.8/site-packages/xrayhat/__init__.py'
 
-The default plotting.py file is already setup to plot what we want, but in case it is missing you want to do something like this::
+The default plotting.py file is already setup to plot what we want, but in case it is missing you want to do something like below.
 
+code-block:: python
 
    def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):  
       '''This is the function called by hat when plotting.py is ran for a Qx/Qy or hk projeciton'''
