@@ -93,6 +93,38 @@ If the "Toggle ROI" button is pressed on the toolbar a box profile is created an
 
 Transformed Detector View
 ````````````````
+Since the HAT GUI currently doesn't support displaying in non-rectangular, we will need to work in Q units so the in-plane project we generate wont look distored. You can choosen this under "Reciprocal Units" in the parameter bar under Crystal. 
+
+Next click the View menu and choose "Transformed Detector View" (ctrl+2). The current view will then be distored and have units on the axis as in the screenshot below.
+
+.. image:: ./images/tutorial1.png
+
+This view is our first opprtunity to select pixels to be included in any subsequent binning. Initally we want to make an in-plane map to find the orientation of the sample, so create a mask that selects a slice along Qr as shown in the screenshot. 
+
+Next check that "h-k" is selected under "Select Projection"in the Data Processing section of the parameter menu.
+
+We are going to create a projection of the selected slice on the Qx/Qy plane. Make sure there is sensible number chosen for the Qx and Qy gridsize (under Data Processing), 800 is a good number to start with.
+
+Then Press: View -> Binned Projection (or ctrl+3)
+
+Binned Projection
+````````````````
+The view you get should now look something like the screenshot below:
+
+.. image:: ./images/tutorial2.png
+
+This is probably a little distored since we have no idea about the sample orientation at this point, it's made harder to tell if the orientation is correct as we are using Q units. Therefore, we would like to plot this in-plane view in reciprocal lattice units (RLU) to see where the rods fall. For a hexagonal unit cell such as Au(111) we can can use the plotting.py interface. 
+
+First you need to find where you installed the xrayhat package and located the file plotting.py. If you created a new enviroment on linux it will be somewhere like:
+
+``<path to enviroment>/lib/python3.8/site-packages>/xrayhat/``
+
+On windows or an anaconda installation it will be somewhere else. The easiest way to locate it is launching python from the terminal and running the following:
+
+``import xrayhat
+xrayhat.__file__``
+
+
 
 
 
