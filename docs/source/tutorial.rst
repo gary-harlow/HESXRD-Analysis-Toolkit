@@ -132,49 +132,45 @@ The default plotting.py file is already setup to plot what we want, but in case 
 
 code-block:: python
 
-   def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):  
-      '''This is the function called by hat when plotting.py is ran for a Qx/Qy or hk projeciton'''
-      
-       b1 = hat.crystal.param('b₁').value() #in-plane lattice parameter
+def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):  
 
-       #forward and backward coordinate transformation
-       def tr(h, k):
-          h, k = np.asarray(h), np.asarray(k)
-          return (np.sqrt(3)/2)*h*b1,(k+0.5*h)*b1
+    b1 = hat.crystal.param('b₁').value()
+    def tr(h, k):
+        h, k = np.asarray(h), np.asarray(k)
+        return (np.sqrt(3)/2)*h*b1,(k+0.5*h)*b1
 
-       def inv_tr(x, y):
-          x, y = np.asarray(x), np.asarray(y)
-          return (x/(np.sqrt(3)/2))/b1,(y-0.5*x)/b1   
+    def inv_tr(x, y):
+        x, y = np.asarray(x), np.asarray(y)
+        return (x/(np.sqrt(3)/2))/b1,(y-0.5*x)/b1   
 
-       #general plotting to make it look better
-       plt.rcParams.update({'font.size': 4})
-       plt.rc('legend', fontsize=8, handlelength=2)
-       cm = 1/2.54  # centimeters in inches
-       fig = plt.figure(figsize=(8*cm,8*cm),dpi=600)
-          
-       #we use the matplotlib grid_helper routine for plotting
-       grid_helper = GridHelperCurveLinear((tr,inv_tr),grid_locator1=FixedLocator([-3,-2,-1,0,1,2,3]),
-                                                                                  grid_locator2=FixedLocator([-3,-2,-1,0,1,2,3]))
-       ax1 = Subplot(fig, 1, 1, 1, grid_helper=grid_helper)
-       fig.add_subplot(ax1)
-       grid_i = grid_i.T.astype(float) #we need the transverse
-       grid_i[grid_i <= 1] = np.nan  #filter out low values
-       
-       tmp = ax1.imshow(grid_i, extent=(np.min(grid_h),np.max(grid_h),np.min(grid_k),np.max(grid_k)), origin='lower',vmin=cmin,vmax=cmax,cmap='viridis',interpolation='gaussian') 
-       
-       #add grid, ticks and axis labels
-       ax1.grid(True,linewidth=0.05,color='black')
-       ax1.xaxis.set_major_locator(ticker.MultipleLocator(1))
-       ax1.yaxis.set_major_locator(ticker.MultipleLocator(1))       
-       plt.xlabel('$H$ (RLU)')
-       plt.ylabel('$K$ (RLU)')
-       
-       #safe to filename passed to function
-       plt.savefig(outfile_name)
-       plt.close()
-       
-       
-       
+
+    plt.rcParams.update({'font.size': 4})
+    plt.rc('legend', fontsize=8, handlelength=2)
+    plt.rcParams.update({'font.sans-serif': 'Arial'})
+    cm = 1/2.54  # centimeters in inches
+    
+    fig = plt.figure(figsize=(8*cm,8*cm),dpi=600)
+
+    grid_helper = GridHelperCurveLinear((tr, inv_tr),grid_locator1=FixedLocator([-3,-2,-1,0,1,2,3]),grid_locator2=FixedLocator([-3,-2,-1,0,1,2,3]))
+   
+    ax1 = Subplot(fig, 1, 1, 1, grid_helper=grid_helper)
+    #ax1 = Subplot(fig, 1, 1, 1,)
+    fig.add_subplot(ax1)
+    grid_i = grid_i.T.astype(float)
+    grid_i[grid_i <= 1] = np.nan  
+
+    tmp = ax1.imshow(grid_i, extent=(np.min(grid_h),np.max(grid_h),np.min(grid_k),np.max(grid_k)), origin='lower',vmin=cmin,vmax=cmax,cmap='viridis',interpolation='gaussian')  
+
+    ax1.grid(True,linewidth=0.05,color='black')
+    ax1.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax1.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+    plt.xlabel('$H$ (RLU)')
+    plt.ylabel('$K$ (RLU)')
+
+    plt.savefig(outfile_name)
+    plt.close()
+    print("Plotting complete")
        
        
 
