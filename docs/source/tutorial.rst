@@ -173,9 +173,15 @@ code-block:: python
      plt.close()
      print("Plotting complete")
        
-       
+It is clear that the CTRs do not align with the axis grid, to fix this we need to change the "Anlge offset" value under 'Experiment' in the parameter tree so that is does. This is an iterative process where you change the value, and press View-> Binned Projection again until it does match. 
 
-       
+For the sake of the tutorial you should put in 49.3 for the angle offset. Your outputted figure will look something like:
+
+
+
+.. image:: ./images/tutorial3.png
+
+ 
        
                                                                 
       
