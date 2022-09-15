@@ -131,6 +131,7 @@ On windows or an anaconda installation it will be somewhere else. The easiest wa
 The default plotting.py file is already setup to plot what we want, but in case it is missing you want to do something like below.
 
 code-block:: python
+ :linenos:
 
 def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):  
 
