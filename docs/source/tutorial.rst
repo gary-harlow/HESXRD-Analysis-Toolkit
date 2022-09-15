@@ -119,10 +119,14 @@ First you need to find where you installed the xrayhat package and located the f
 
 ``<path to enviroment>/lib/python3.8/site-packages>/xrayhat/``
 
-On windows or an anaconda installation it will be somewhere else. The easiest way to locate it is launching python from the terminal and running the following:
+On windows or an anaconda installation it will be somewhere else. The easiest way to locate it is launching python from the terminal and doing something like this::
 
-``import xrayhat
-xrayhat.__file__``
+   Python 3.8.y
+    [GCC 4.x] on linux
+    Type "help", "copyright", "credits" or "license" for more information.
+    >>> import xrayhat
+    >>> xrayhat.__file__
+    '/home/garyh/pyenvs/hat/lib/python3.8/site-packages/xrayhat/__init__.py'
 
 
 
