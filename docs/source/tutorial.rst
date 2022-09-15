@@ -1,6 +1,6 @@
 Beginner tutorial
 =====================================
-This tutorial will introduce some of the basic functionalities of HAT and generate some basic plots. 
+This tutorial will introduce some of the basic functionalities of HAT and generate some basic plots for a Au(111) surface in surface reciprocal lattice units.
 
 .. toctree::
  :maxdepth: 1
@@ -134,7 +134,8 @@ code-block:: python
  :linenos:
 
  def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):  
-
+     
+     #define transformation for hexagonal coordinates
      b1 = hat.crystal.param('b₁').value()
      def tr(h, k):
          h, k = np.asarray(h), np.asarray(k)
@@ -177,9 +178,23 @@ It is clear that the CTRs do not align with the axis grid, to fix this we need t
 
 For the sake of the tutorial you should put in 49.3 for the angle offset. Your outputted figure will look something like:
 
-
-
 .. image:: ./images/tutorial3.png
+
+Although this looks fairly reasonable we still aren't actually sure if it is the correct orientation. The surface as 120 degree rotational symmetry but lattice points are found every 60 degrees so it could be the the reciprocal space map is 60 degrees off. To check this we need to look at where the Bragg 
+peaks fall on a CTR. 
+
+First we choose a CTR, add a new mask around the CTR currently located a (1 0), this is unique to the Qx/Qy projection. As shown:
+
+.. image:: ./images/tutorial4.png
+
+Next we want to go back to the transformed projection view (ctrl+2)  and select the entire Qz range, i.e. 
+
+.. image:: ./images/tutorial5.png
+
+At this point any pixels that fall in BOTH our two masks will be included in any hl, kl, or 3d binning. We will generate a hl projection to see where the Bragg peaks fall. Since our in-plane box is very small in the Qx/Qy directions it does not make much sense to have a large grid as there would be many empty pixels. So we change Grid Size Qx and Qy each to 100, as well as 'Select Projection' to HL (under Data Processing). 
+
+Press View -> Binned Projection 
+
 
  
        
