@@ -16,7 +16,7 @@ Contents
    tutorial
    scripting
    screenshots
-   hat paper
+   paper
 
 Getting help
 ------------
