@@ -218,7 +218,65 @@ We can increase the Grid Size Qx and Qy to 1000, and again select h-k projection
 
 CTR Extraction
 ````````````````
+Here we will export a CTR to a 3d grid and extracting it with a python script. 
 
+1) We should raw a mask around the CTR in the in-plane view as before, there should be enough background around the CTR to be able to perform background subtraction. For this we have chosen the (10) CTR.
+
+2) In the transformed detector view, make sure all parts of the CTRs you might be interested in are included. 
+
+3) Select an appropriate grid size, this can't be too big since for a 3d grid you will quickly run out of memory. If Qx and Qy have big grids it is likely not every voxel will be populated since we only selected a small box around the CTR in Qx and Qy. If Qz is large it can be okay, but it does mean you will have many points along the CTR. Here we have selected 150 for each of the Grid Sizes.
+
+3) To check with can create a h-l projection. The profile along this projection includees the CTR profile, and if you are able to take representive background regions either side it could be used to directly extract the CTR profile. 
+
+.. image:: ./images/tutorial9.png
+
+4) Click View -> Export 3d Data
+
+This will take a little time, afterwhich you can save a 3d grid to a .npz file. 
+
+
+Viewing CTR in 3D
+````````````````
+Lets create a new enviroment for mayavi since it uses pyqt5 and this could cause conflicts with pyqt6 that HAT need, in linux we would do the following:
+
+``$ python3 -m venv mayavi``
+
+Then we should activate the enviroment:
+
+``$ source mayavi/bin/activate``
+
+Next we should install myavi and some libraries:
+
+``$ pip install wheel numpy mayavi pyqt5``
+
+And then we can run the following code to plot our data in 3d::
+
+ import mayavi.mlab as mlab
+ import numpy as np
+
+ data=np.load("au111_10_3d_150_150_150.npz")['data']
+ print(np.shape(data))
+
+ mlab.pipeline.volume(mlab.pipeline.scalar_field(data),vmin=5, vmax=250)
+ mlab.outline()
+ mlab.show()
+
+
+CTR Exraction II
+````````````````
+Inside python or jupyter we will next run the following code segments to take slices of our 3d data. Then for each slice we take a region for our signal and 
+
+First we should import the libraries::
+
+ # this is a script to integrate a CTR froma 3d grid
+ import numpy as np
+ import matplotlib.pylab as plt
+ import lmfit
+ from lmfit.lineshapes import gaussian2d, lorentzian
+
+ cm = 1/2.54
+
+ file = "/home/gary/rods/20_35_35_400.npy"
 
 
 
