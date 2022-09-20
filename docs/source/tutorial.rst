@@ -214,10 +214,11 @@ We can go back to transformed detector view and just select the parts around the
 
 We can increase the Grid Size Qx and Qy to 1000, and again select h-k projection from the parameter menu. Then click View -> Binned projection. After it is complete one can run plotting.py (F6) and hopefully get something that looks like this:
 
+.. image:: ./images/tutorial8.png
 
 CTR Extraction
 ````````````````
-.. image:: ./images/tutorial8.png
+
 
 
 
