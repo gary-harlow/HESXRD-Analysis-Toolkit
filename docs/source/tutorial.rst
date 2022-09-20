@@ -192,6 +192,38 @@ At this point any pixels that fall in BOTH our two masks will be included in any
 
 Press View -> Binned Projection 
 
+We will now see a HL projection containing our (10) CTR. Next we take a profile along the CTR:
+ 1) First select "L(qz)" as the axis of interest under Profile Tools in the parameter tree. 
+ 2) Then press the "Toogle ROI" toolbar button (red circle)
+ 3) Drag the profile box so that the two circles are at each end of the CTR. 
+  
+.. image:: ./images/tutorial6.png
+ 
+From this the Bragg peaks that are masked by the beamstops lie at Qz ~ 1.7 and Qz ~ 4.5. If we divide these by b3 (0.889) we get the reciprocal lattice space positions 1.9 and 5.0. Since we are only estimating the position of the Bragg peaks here it is not too important. This rod then has Bragg peaks at 2 and 5 in surface units and they are seperated by 3 RLU as one would expect given the ABC stacking. However, for (10) rod the Bragg peaks should be at 1,4, and 7. Therefore, our orientation is incorrect by exactly 60 degrees.
+
+To correct this we can either add 60 to 49.3 and put 109.3 in the angle offset or instead change the Aux Angle offset to 60 degrees. 
+
+
+Making a nice in-plane map
+````````````````
+Now we have the sample orientation correct we can start to make some figures. 
+
+We can go back to transformed detector view and just select the parts around the CTRs we wish to include. Plus a full horizontal slice so that we have a background between the CTRs. 
+
+.. image:: ./images/tutorial7.png
+
+We can increase the Grid Size Qx and Qy to 1000, and again select h-k projection from the parameter menu. Then click View -> Binned projection. After it is complete one can run plotting.py (F6) and hopefully get something that looks like this:
+
+
+CTR Extraction
+````````````````
+
+
+
+
+
+
+
 
  
        
