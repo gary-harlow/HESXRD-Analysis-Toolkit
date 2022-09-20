@@ -15,9 +15,8 @@ Contents
    install
    tutorial
    scripting
-   plotting
-   extracting
    screenshots
+   hat paper
 
 Getting help
 ------------
