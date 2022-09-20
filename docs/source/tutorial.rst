@@ -217,7 +217,7 @@ We can increase the Grid Size Qx and Qy to 1000, and again select h-k projection
 
 CTR Extraction
 ````````````````
-
+.. image:: ./images/tutorial8.png
 
 
 
