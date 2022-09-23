@@ -220,11 +220,11 @@ CTR Extraction
 ````````````````
 Here we will export a CTR to a 3d grid and extracting it with a python script. 
 
-1) We should raw a mask around the CTR in the in-plane view as before, there should be enough background around the CTR to be able to perform background subtraction. For this we have chosen the (10) CTR.
+1) We should raw a mask around the CTR in the in-plane view as before, there should be enough background around the CTR to be able to perform background subtraction. For this we have chosen the (20) CTR.
 
 2) In the transformed detector view, make sure all parts of the CTRs you might be interested in are included. 
 
-3) Select an appropriate grid size, this can't be too big since for a 3d grid you will quickly run out of memory. If Qx and Qy have big grids it is likely not every voxel will be populated since we only selected a small box around the CTR in Qx and Qy. If Qz is large it can be okay, but it does mean you will have many points along the CTR. Here we have selected 150 for each of the Grid Sizes.
+3) Select an appropriate grid size, this can't be too big since for a 3d grid you will quickly run out of memory. If Qx and Qy have big grids it is likely not every voxel will be populated since we only selected a small box around the CTR in Qx and Qy. If Qz is large it can be okay, but it does mean you will have many points along the CTR. Here we have selected 30 for Qx and Qy and 400 for Qz. We should also enable apply intensity corrections in the parameter tree. 
 
 3) To check with can create a h-l projection. The profile along this projection includees the CTR profile, and if you are able to take representive background regions either side it could be used to directly extract the CTR profile. 
 
@@ -254,16 +254,40 @@ And then we can run the following code to plot our data in 3d::
  import mayavi.mlab as mlab
  import numpy as np
 
- data=np.load("au111_10_3d_150_150_150.npz")['data']
- print(np.shape(data))
+ filename = "au111_10_3d_30_30_400.npz"
+ background = 70
+ cmin= 0
+ cmax = 5.5
 
- mlab.pipeline.volume(mlab.pipeline.scalar_field(data),vmin=5, vmax=250)
+ #create a simple logarithmic 3d plot of the CTR
+ data=np.load(filename)['data']
+
+ #take a background and set it to a small number but not zero
+ b = np.where(data < background, 0.0000001, data)
+ print(np.min(b))
+ b =np.log(b)
+
+ #show in mayavi
+ mlab.pipeline.volume(mlab.pipeline.scalar_field(b),vmin=cmin, vmax=cmax)
  mlab.outline()
  mlab.show()
+ 
+ .. image:: ./images/tutorial10.png
+
+It is somewhat noticeable that the CTR still curves a bit towards the top and this is due to the sample being somewhat misaligned. It can be fixed by optimising the various parameters such as angle offset, angle of incidence, sample-detector distance and the Center Pixel. Alternatively (as with this data) the sample was not accurately aligned durng the experiment. However, it is still possible to extract the CTR data as in the next section. 
+
+Further information about plotting with mayavi can be found on their site:
+
+https://docs.enthought.com/mayavi/mayavi/
+
+It can also be useful to visualise larger volumes of reciprocal, this is for example the entire volume collected in the dataset:
+
+ .. image:: ./images/tutorial11.png
 
 
 CTR Exraction II
 ````````````````
+We'd now like to take slices along our extracted data and 
 Inside python or jupyter we will next run the following code segments to take slices of our 3d data. Then for each slice we take a region for our signal and 
 
 First we should import the libraries::
@@ -277,6 +301,7 @@ First we should import the libraries::
  cm = 1/2.54
 
  file = "/home/gary/rods/20_35_35_400.npy"
+
 
 
 
