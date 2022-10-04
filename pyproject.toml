@@ -30,8 +30,7 @@ dependencies = [
 "h5py>=3.1.0",
 "hdf5plugin>=2.3.1",
 "fabio>=0.10.2",
-"natsort>=8.1.0",
-"mayavi>=4.7.4"]
+"natsort>=8.1.0"]
 
 [project.urls]
 homepage = "https://github.com/gary-harlow/HESXRD-Analysis-Toolkit"
