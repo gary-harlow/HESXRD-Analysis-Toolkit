@@ -272,7 +272,7 @@ And then we can run the following code to plot our data in 3d::
  mlab.outline()
  mlab.show()
  
- .. image:: ./images/tutorial10.png
+.. image:: ./images/tutorial10.png
 
 It is somewhat noticeable that the CTR still curves a bit towards the top and this is due to the sample being somewhat misaligned. It can be fixed by optimising the various parameters such as angle offset, angle of incidence, sample-detector distance and the Center Pixel. Alternatively (as with this data) the sample was not accurately aligned durng the experiment. However, it is still possible to extract the CTR data as in the next section. 
 
@@ -282,7 +282,7 @@ https://docs.enthought.com/mayavi/mayavi/
 
 It can also be useful to visualise larger volumes of reciprocal, this is for example the entire volume collected in the dataset:
 
- .. image:: ./images/tutorial11.png
+.. image:: ./images/tutorial11.png
 
 
 CTR Exraction II
