@@ -8,13 +8,16 @@ import numpy as np
 import math
 import time
 from xrayhat.fileio import *
-import mayavi.mlab as mlab
-
 
 
 def script_main(hat):
     import numpy as np
     grid=hat.showData
+    
+    print(np.max(grid))
+    return
+    
+    
     #mlab.pipeline.volume(mlab.pipeline.scalar_field(grid),vmin=0, vmax=100)
     #mlab.outline()
     #mlab.show()

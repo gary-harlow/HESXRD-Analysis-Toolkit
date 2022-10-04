@@ -375,9 +375,9 @@ class MainWindow(QMainWindow):
         binViewAct.triggered.connect(self.makeProjection)
         actionView.addAction(binViewAct)
 
-        full3dViewAct = QAction('3D Binned Projection', self)
+        full3dViewAct = QAction('Export 3D data', self)
         full3dViewAct.setShortcut('Ctrl+5')
-        full3dViewAct.setStatusTip('Use all pixels across the selected angular range to create a projection')
+        full3dViewAct.setStatusTip('Combine the masks to select 3d region of space and export it as a npz file')
         full3dViewAct.triggered.connect(self.make3dProjection)
         actionView.addAction(full3dViewAct)
 
@@ -1182,12 +1182,13 @@ class MainWindow(QMainWindow):
 
     def updateCrangeManual(self):
         cmin = atof(self.cminbox.text())
-        cmax = atof(self.cmaxbox.text())      
+        cmax = atof(self.cmaxbox.text())   
         self.setLevels(cmin,cmax)     
-        self.updateRegion()
+     
 
     def logIntensity(self):
-        '''Function to show the logged intensity'''        
+        '''Function to show the logged intensity'''    
+
         if self.p.param('Data Processing', 'Log Intensity').value(): 
             if self.log_active == False:
                 self.log_active = True
@@ -1199,7 +1200,7 @@ class MainWindow(QMainWindow):
                     self.statusLabel.setText("Negative value in log detected shifting intensities")
                     self.cshift = abs(min_value)+1
                     logdata = np.log10(self.showData+self.cshift)
-                    self.setLevels(np.log10(cmin+self.cshift),np.log10(cmax+self.cshift)) 
+                    #self.setLevels(np.log10(cmin+self.cshift),np.log10(cmax+self.cshift)) 
 
                 else:
                     logdata = np.log10(self.showData)
@@ -1208,11 +1209,11 @@ class MainWindow(QMainWindow):
                 logdata = np.log10(self.showData+self.cshift)
 
             self.imgLeft.setImage(logdata, autoLevels=False)
-        else:
+        else:            
             if self.log_active:
                 cmin, cmax = self.hist.getLevels()
                 self.imgLeft.setImage(self.showData, autoLevels=False)
-                self.setLevels(10**(cmin)-self.cshift,10**(cmax)-self.cshift) 
+                #self.setLevels(10**(cmin)-self.cshift,10**(cmax)-self.cshift) 
                 self.cshift = 0
                 self.log_active = False
                 self.imgLeft.show()   
@@ -1286,7 +1287,7 @@ class MainWindow(QMainWindow):
         """ Fnction for creating an in-plane map by generating coordinates for each pixel and place them in the correct histogram bin"""
         #first we check if it makes sense to do the calculation
         if self.busy == True:
-            print('Error: Hat is busy and can not perform requested binning. This is probably because you are loading files')
+            self.statusLabel.setText('Error: Hat is busy and can not perform requested binning. This is probably because you are loading files')
             return            
         
         if self.image_stack.angle_mode == False:
@@ -1358,9 +1359,9 @@ class MainWindow(QMainWindow):
             
         #3d
         elif projection == 3:    
-            #This needs to be a Qt widget!!        
-            importlib.reload(scene3d)
             scene3d.scene(self)
+            
+
 
         self.imgLeft.setImage(self.showData,autoLevels=False) 
         self.imgLeft.setTransform(tr)
@@ -1370,7 +1371,7 @@ class MainWindow(QMainWindow):
         self.progressBar.setValue(self.progressBar.maximum())
         #self.p3.autoRange()
         #self.update()   
-        self.setupProjectionAxis()      
+        self.setupProjectionAxis()             
         self.hist.setImageItem(self.imgLeft)
         self.hideMasks() 
         self.showMasks()        
@@ -1534,15 +1535,15 @@ class MainWindow(QMainWindow):
         #do 2d interpolation, and apply intensity corrections if needed
         if self.p.param('Data Processing', 'Apply Intensity Corrections').value():
             #we unravel each pixmap to get lists of coordinates (hk, l, correction)
-            grid_i = interpolate.griddata((theta2_values,chi_values),np.ravel(c_values*np.rot90(self.showData,k=1)),(self.grid_theta2, self.grid_chi),method='linear',fill_value=0)
+            grid_i = interpolate.griddata((theta2_values,chi_values),np.ravel(c_values*np.rot90(self.showData,k=1)),(self.theta2grid, self.chigrid),method='linear',fill_value=0)
         else:
-            grid_i = interpolate.griddata((theta2_values,chi_values),np.ravel(np.rot90(self.showData,k=1)),(self.grid_theta2, self.grid_chi),method='linear',fill_value=0)           
+            grid_i = interpolate.griddata((theta2_values,chi_values),np.ravel(np.rot90(self.showData,k=1)),(self.theta2grid, self.chigrid),method='linear',fill_value=0)           
             
 
         #grid_i[grid_i<=0]=np.nan
         #replace showData with the 
         self.showData=grid_i
-        self.gridl = self.grid_chi
+        self.gridl = self.chigrid
 
 
 

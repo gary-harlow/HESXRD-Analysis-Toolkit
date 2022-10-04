@@ -1,11 +1,18 @@
-import mayavi.mlab as mlab
-import numpy as np
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-#this is a temporary solution and should instead be implemneted in qt
+import numpy as np
+from PyQt6.QtWidgets import (QFileDialog)
+#Export 3D data
 def scene(hat):
+    ''' This function outputs a 3d grid as an npz file'''
+    data=hat.showData
+    x = hat.xgrid
+    y = hat.ygrid
+    z = hat.zgrid  
     
-    grid=hat.showData
-    mlab.pipeline.volume(mlab.pipeline.scalar_field(grid),vmin=5, vmax=150)
-    mlab.outline()
-    mlab.show()
+    
+    filename, _ = QFileDialog.getSaveFileName(hat,"Chose file name for 3d data", "","npz (*.npz);;All Files (*)")     
+    if filename:  
+       np.savez(filename, data=data,x=x,y=x,z=z)
 

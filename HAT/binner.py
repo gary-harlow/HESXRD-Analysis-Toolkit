@@ -23,7 +23,6 @@ def projection_binner(window,angles,imagedata,progress_callback):
     #some parameters will be different if we don't use the binned data in memory
     #in this the binner re-reads the file from disk
     if use_raw_files:
-        print("RAW")
         pixel_count_x=int(experiment.param('X Pixels').value())
         pixel_count_y=int(experiment.param('Y Pixels').value())
         if twodetectors:
@@ -92,12 +91,13 @@ def projection_binner(window,angles,imagedata,progress_callback):
                 qrs.append(abs(mask[0].size()[0] + mask[0].pos()[0]))
 
         #but we need to be careful here since we dont know the orinatation so it could be negative
+        #and additional 0.5 is added to stop overflows - probably a poor fix
         qrmax = np.max(qrs)
         xmax = qrmax
         ymax = qrmax
         xmin = -1*qrmax
         ymin = -1*qrmax
-        window.qrmax = qrmax #we need this later
+        window.qrmax = qrmax
 
 
     gridstepx = abs((xmax-xmin)/gridsizex)
@@ -248,7 +248,7 @@ def projection_binner(window,angles,imagedata,progress_callback):
                         k = Binv[1,0]*hphi_1+Binv[1,1]*hphi_2+Binv[1,2]*hphi_3
                         l = Binv[2,0]*hphi_1+Binv[2,1]*hphi_2+Binv[2,2]*hphi_3
                         r = b1/b2
-                        qr = np.floor(sign*math.sqrt((hphi_1/b1)**2 + (r*hphi_2/b2)**2))
+                        qr = int(sign*math.sqrt((hphi_1/b1)**2 + (r*hphi_2/b2)**2))
                     else:
                         h = hphi_1
                         k = hphi_2
@@ -329,7 +329,7 @@ def projection_binner(window,angles,imagedata,progress_callback):
                                     cuda.atomic.add(histogram_result,(histx,histy,histz),intensity)
                                     cuda.atomic.add(histogram_weights,(histx,histy,histz),1)                           
             # Configure the blocks
-            threadsperblock = (16, 8) #could be moved to setting or config file
+            threadsperblock = (16, 16) #could be moved to setting or config file
             blockspergrid_x = int(math.ceil(pixel_count_y / threadsperblock[0]))
             blockspergrid_y = int(math.ceil(pixel_count_x / threadsperblock[1]))
             blockspergrid = (blockspergrid_x, blockspergrid_y)   
@@ -341,11 +341,11 @@ def projection_binner(window,angles,imagedata,progress_callback):
             chi_vals = cuda.to_device(np.zeros((pixel_count_y,pixel_count_x),dtype=np.single))
             #for later
             if imgState == 6:
-                histogram_result = cuda.to_device(np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.double))                       
-                histogram_weights = cuda.to_device(np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.double))
+                histogram_result = cuda.to_device(np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.single))                       
+                histogram_weights = cuda.to_device(np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.single))
             else:
-                histogram_result = cuda.to_device(np.zeros((grid_nx,grid_ny),dtype=np.double))                       
-                histogram_weights = cuda.to_device(np.zeros((grid_nx,grid_ny),dtype=np.double))
+                histogram_result = cuda.to_device(np.zeros((grid_nx,grid_ny),dtype=np.single))                       
+                histogram_weights = cuda.to_device(np.zeros((grid_nx,grid_ny),dtype=np.single))
             _lab_frame[blockspergrid, threadsperblock](qx_vals,qy_vals,qz_vals,corrections,twotheta_vals,chi_vals)         
 
       
@@ -368,11 +368,31 @@ def projection_binner(window,angles,imagedata,progress_callback):
                 else:
                     window.progressBar.setValue(i)  
 
-                del(imagei)                    
+                del(imagei)                
+
 
             final_hist = np.asarray(histogram_result.copy_to_host()) 
             final_weights = np.asarray(histogram_weights.copy_to_host())     
-            hist2 = np.divide(final_hist, final_weights, where=final_weights!=0)     
+            hist2 = np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.single) 
+            
+            if imgState  == 6:
+                print(np.shape(hist2))
+                for row in range(np.shape(hist2)[0]):
+                    for col in range(np.shape(hist2)[1]):
+                        for layer in range(np.shape(hist2)[2]):                        
+                            if final_hist[row][col][layer] !=0 and final_weights[row][col][layer] !=0:
+                                temp = final_hist[row][col][layer]/final_weights[row][col][layer]
+                                if temp > - 1e10:
+                                    hist2[row][col][layer]= temp   
+              
+            else:
+                # this is necessary for some weird memory issue witn np.divide seen on linux
+                for row in range(np.shape(hist2)[0]):
+                    for col in range(np.shape(hist2)[1]):
+                        if final_hist[row][col] !=0 and final_weights[row][col] !=0:
+                            temp = final_hist[row][col]/final_weights[row][col]
+                            if temp > - 1e10:
+                                hist2[row][col]= temp                 
 
             xaxis = np.arange(xmin,xmax,gridstepx)
             yaxis = np.arange(ymin,ymax,gridstepy)
@@ -391,12 +411,12 @@ def projection_binner(window,angles,imagedata,progress_callback):
                      
     else:     
         def _lab_frame():
-            qx_img = np.zeros((pixel_count_y,pixel_count_x)) 
-            qy_img = np.zeros((pixel_count_y,pixel_count_x))
-            qz_img = np.zeros((pixel_count_y,pixel_count_x)) 
-            theta2_img = np.zeros((pixel_count_y,pixel_count_x)) 
-            chi_img = np.zeros((pixel_count_y,pixel_count_x)) 
-            c_img = np.zeros((pixel_count_y,pixel_count_x)) #array of pixel intensity corrections            
+            qx_img = np.zeros((pixel_count_y,pixel_count_x),dtype=np.double) 
+            qy_img = np.zeros((pixel_count_y,pixel_count_x),dtype=np.double)
+            qz_img = np.zeros((pixel_count_y,pixel_count_x),dtype=np.double) 
+            theta2_img = np.zeros((pixel_count_y,pixel_count_x),dtype=np.double) 
+            chi_img = np.zeros((pixel_count_y,pixel_count_x),dtype=np.double) 
+            c_img = np.zeros((pixel_count_y,pixel_count_x),dtype=np.double) #array of pixel intensity corrections            
             """Function calculate the pixel positon in lab frame"""
             for row in range(pixel_count_y):    
                 for col in range(pixel_count_x):
@@ -550,10 +570,10 @@ def projection_binner(window,angles,imagedata,progress_callback):
                         #Now we we have the coordinates of our pixel we need to decide which bin to put it
                         histx = int((h-xmin)*invgridstepx)
                         histy = int((k-ymin)*invgridstepy)
-                        histz = int((l-zmin)*invgridstepz)                                           
-                        
+                        histz = int((l-zmin)*invgridstepz)
+
                         #we bin differently depending on the projection direction
-                        #HK
+                        #   HK
                         if imgState == 3:    
                             if include_pixel_in_hk and include_pixel_in_l:                               
                                 hist[histx][histy] += intensity
@@ -592,25 +612,13 @@ def projection_binner(window,angles,imagedata,progress_callback):
         if imgState  == 6:
             final_hist = np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.double)
             final_weights = np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.double) 
+            hist2 = np.zeros((grid_nx,grid_ny,grid_nz),dtype=np.double) 
         else:
             final_hist = np.zeros((grid_nx,grid_ny),dtype=np.double)
             final_weights = np.zeros((grid_nx,grid_ny),dtype=np.double) 
+            hist2 = np.zeros((grid_nx,grid_ny),dtype=np.double) 
 
         qx_img,qy_img,qz_img,c_img,theta2_img,chi_img = lab_frame()
-        #So to get the transformed detector view we can just bin on one image, the summed or averaged image
-        if window.ImgState == 1:
-            window.statusLabel.setText("Calculating..")
-            image = window.showData
-            image_bin,image_weights = binner(image,np.deg2rad(0),qx_img,qy_img,qz_img,c_img,theta2_img,chi_img)           
-            hist = np.divide(image_bin, image_weights, where=image_bin!=0)  
-            xaxis = np.arange(xmin,xmax,gridstepx)
-            yaxis = np.arange(zmin,zmax,gridstepz)
-            zaxis = np.arange(zmin,zmax,gridstepz) 
-            xgrid = np.tile(xaxis,(grid_ny,1))
-            ygrid = np.flipud(np.transpose(np.tile(yaxis,(grid_nx,1))))
-            zgrid = np.flipud(np.transpose(np.tile(zaxis,(grid_nx,1))))
-            return xgrid,ygrid,zgrid,hist
-
         
         
         for i, angle in enumerate(angles): 
@@ -620,17 +628,33 @@ def projection_binner(window,angles,imagedata,progress_callback):
             else:
                 image = np.rot90(imagedata[i])                    
             image_bin,image_weights = binner(image,np.deg2rad(angle),qx_img,qy_img,qz_img,c_img,theta2_img,chi_img) 
+            
       
             final_hist= final_hist + image_bin
-
             final_weights = final_weights + image_weights
             if window.single_thread == False:
                 progress_callback.emit(i)  
             else:
-                window.progressBar.setValue(i)                        
-
-        hist2 = np.divide(final_hist, final_weights, where=final_weights!=0)  
-
+                window.progressBar.setValue(i)   
+        
+        if imgState  == 6:
+            print(np.shape(hist2))
+            for row in range(np.shape(hist2)[0]):
+                for col in range(np.shape(hist2)[1]):
+                    for layer in range(np.shape(hist2)[2]):                        
+                        if final_hist[row][col][layer] !=0 and final_weights[row][col][layer] !=0:
+                            temp = final_hist[row][col][layer]/final_weights[row][col][layer]
+                            if temp > - 1e10:
+                                hist2[row][col][layer]= temp         
+        else:
+            # this is necessary for some weird memory issue witn np.divide seen on linux
+            for row in range(np.shape(hist2)[0]):
+                for col in range(np.shape(hist2)[1]):
+                    if final_hist[row][col] !=0 and final_weights[row][col] !=0:
+                        temp = final_hist[row][col]/final_weights[row][col]
+                        if temp > - 1e10:
+                            hist2[row][col]= temp      
+      
         xaxis = np.arange(xmin,xmax,gridstepx)
         yaxis = np.arange(ymin,ymax,gridstepy)
         zaxis = np.arange(zmin,zmax,gridstepz) 
@@ -645,5 +669,4 @@ def projection_binner(window,angles,imagedata,progress_callback):
         zgrid = np.tile(zaxis,(grid_nz,1))
         #zgrid = np.flipud(np.transpose(np.tile(zaxis,(grid_nz,1))))
 
-          
         return xgrid,ygrid,zgrid,hist2    

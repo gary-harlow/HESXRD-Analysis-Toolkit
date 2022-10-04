@@ -406,6 +406,7 @@ class ImageStack():
         #scripting is not super compatible with multithreading if we are running a script
         #we should not load the files in the background, otherwise the next script action will run
         #clear current image stack
+        self.window.busy = True
         if None in self.image_data:
             del(self.image_data)
         try:
@@ -433,7 +434,7 @@ class ImageStack():
     def __load_images(self, progress_callback): 
         """Loads files selected into memory"""  
         self.__update_params()   
-        self.angle_mode = False
+        self.angle_mode = False        
         #esrf id31 beamline
         if self.beamline == 4:             
             self.hdf5_file = h5py.File(self.hdf5_file_name, 'r')   
@@ -498,8 +499,6 @@ class ImageStack():
     def progress_fn(self, n):        
         '''File loading progess'''
         self.window.progressBar.setValue(n)
-        if n == 1:
-             self.window.loadUpdate(n)
         if n!= 0 and n%100 == 0:
             self.window.loadUpdate(n)
 

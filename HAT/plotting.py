@@ -40,8 +40,8 @@ def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):
     cm = 1/2.54  # centimeters in inches
     fig = plt.figure(figsize=(8*cm,8*cm),dpi=600)
     #grid_helper = GridHelperCurveLinear((tr, inv_tr),grid_locator1=FixedLocator([-1.04,-1,-0.096,-0.092]),grid_locator2=FixedLocator([-2,-1,0,0.96,1,1.04,1.08]))
-    #grid_helper = GridHelperCurveLinear((tr, inv_tr),grid_locator1=FixedLocator([-3,-2,-1,0,1,2,3]),grid_locator2=FixedLocator([-3,-2,-1,0,1,2,3]))
-    grid_helper = GridHelperCurveLinear((tr, inv_tr),grid_locator1=FixedLocator([2,2.05,1.95]),grid_locator2=FixedLocator([-1,-0.95,-1.05]))
+    grid_helper = GridHelperCurveLinear((tr, inv_tr),grid_locator1=FixedLocator([-3,-2,-1,0,1,2,3]),grid_locator2=FixedLocator([-3,-2,-1,0,1,2,3]))
+    #grid_helper = GridHelperCurveLinear((tr, inv_tr),grid_locator1=FixedLocator([2,2.05,1.95]),grid_locator2=FixedLocator([-1,-0.95,-1.05]))
     ax1 = Subplot(fig, 1, 1, 1, grid_helper=grid_helper)
     #ax1 = Subplot(fig, 1, 1, 1,)
     fig.add_subplot(ax1)
@@ -67,8 +67,8 @@ def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):
     plt.xlabel('$H$ (RLU)')
     plt.ylabel('$K$ (RLU)')
     #plt.xlim(1.9,2.4)
-    plt.ylim(-0.3,0.3)
-    plt.xlim(4.2,4.65)
+    #plt.ylim(-0.3,0.3)
+    #plt.xlim(4.2,4.65)
 
     plt.savefig(outfile_name)
     plt.close()
