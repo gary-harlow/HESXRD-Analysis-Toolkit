@@ -404,6 +404,7 @@ Now we loop through each slice image and extract the data::
 The above script will output two images for each slice, left image is the slice witht he regions for signal and background shown. The right image shows the slice after interpolation, which can fix any gaps in the gap caused for instance by the binning resolution. One should then inspect the images to make sure all the regions are inside the data and don't contain any artifacts that could lead to a false signal. In the above script one can add slices to exclude by putting the index in the ignore list. 
 
 Next we can plot the CTR::
+
   #plot CTR
   plt.plot(np.asarray(ls)/0.889,np.log(values),'r+',alpha=.5)
   plt.ylabel('|F|^2')
