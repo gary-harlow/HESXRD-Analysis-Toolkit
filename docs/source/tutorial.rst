@@ -105,17 +105,17 @@ Next check that "h-k" is selected under "Select Projection"in the Data Processin
 
 We are going to create a projection of the selected slice on the Qx/Qy plane. Make sure there is sensible number chosen for the Qx and Qy gridsize (under Data Processing), 800 is a good number to start with.
 
-Then Press: View -> Binned Projection (or ctrl+3)
+Then Press: View -> Binned Projection [Ctrl+3]
 
 Binned Projection
 ````````````````
-The view you get should now look something like the screenshot below:
+After some processing the view you get should now look something like the screenshot below (note you may need to adjust the color scale):
 
 .. image:: ./images/tutorial2.png
 
-This is probably a little distored since we have no idea about the sample orientation at this point, it's made harder to tell if the orientation is correct as we are using Q units. Therefore, we would like to plot this in-plane view in reciprocal lattice units (RLU) to see where the rods fall. For a hexagonal unit cell such as Au(111) we can can use the plotting.py interface. 
+In this example its a little harder to tell if the orientation is correct as we are using Q units. Therefore, we would like to plot this in-plane view in reciprocal lattice units (RLU) to see where the rods fall. For a hexagonal unit cell such as Au(111) we can can use the plotting.py interface. 
 
-First you need to find where you installed the xrayhat package and located the file plotting.py. If you created a new enviroment on linux it will be somewhere like:
+First you need to find where you installed the xrayhat package and locate the file 'plotting.py'. If you created a new enviroment on linux it will be somewhere like:
 
 ``<path to enviroment>/lib/python3.8/site-packages>/xrayhat/``
 
@@ -128,7 +128,7 @@ On windows or an anaconda installation it will be somewhere else. The easiest wa
     >>> xrayhat.__file__
     '/home/garyh/pyenvs/hat/lib/python3.8/site-packages/xrayhat/__init__.py'
 
-The default plotting.py file is already setup to plot what we want, but in case it is missing you want to do something like below::
+The default plotting.py file is already setup to plot what we want, but in case it is missing or changed you want to do something like below::
 
  def plot_projection_hk(hat, grid_h,grid_k,grid_i,cmin,cmax, outfile_name):  
      
@@ -171,26 +171,28 @@ The default plotting.py file is already setup to plot what we want, but in case 
      plt.close()
      print("Plotting complete")
        
-It is clear that the CTRs do not align with the axis grid, to fix this we need to change the "Anlge offset" value under 'Experiment' in the parameter tree so that is does. This is an iterative process where you change the value, and press View-> Binned Projection again until it does match. 
+From the image produced. it will be clear that the CTRs do not align with the axis grid. To fix this we need to change the "Anlge offset" value under 'Experiment' in the parameter tree so that is does. This is an iterative process where you change the value, and press View-> Binned Projection again until it does match. 
 
-For the sake of the tutorial you should put in 49.3 for the angle offset. Your outputted figure will look something like:
+For the sake of the tutorial you should put in 49.3 for the angle offset which is the first angle where it does align. Your outputted figure will look something like:
 
 .. image:: ./images/tutorial3.png
 
-Although this looks fairly reasonable we still aren't actually sure if it is the correct orientation. The surface as 120 degree rotational symmetry but lattice points are found every 60 degrees so it could be the the reciprocal space map is 60 degrees off. To check this we need to look at where the Bragg 
+Although this looks fairly reasonable we still aren't actually sure if it is the correct orientation. The diffraction pattern has 120 degree rotational symmetry but rods are found every 60 degrees so it could be the the reciprocal space map is 60 degrees off. To check this we need to look at where the Bragg 
 peaks fall on a CTR. 
 
-First we choose a CTR, add a new mask around the CTR currently located a (1 0), this is unique to the Qx/Qy projection. As shown:
+First we choose a CTR. Add a new mask around the CTR currently located a (1 0), this mask is unique to the Qx/Qy projection. As shown:
 
 .. image:: ./images/tutorial4.png
 
-Next we want to go back to the transformed projection view (ctrl+2)  and select the entire Qz range, i.e. 
+Next we want to go back to the transformed projection view [ctrl+2] and select the entire Qz range with a mask, i.e. 
 
 .. image:: ./images/tutorial5.png
 
-At this point any pixels that fall in BOTH our two masks will be included in any hl, kl, or 3d binning. We will generate a hl projection to see where the Bragg peaks fall. Since our in-plane box is very small in the Qx/Qy directions it does not make much sense to have a large grid as there would be many empty pixels. So we change Grid Size Qx and Qy each to 100, as well as 'Select Projection' to HL (under Data Processing). 
+At this point any pixels that fall inside BOTH our two masks will be included in any hl, kl, or 3d binning. 
 
-Press View -> Binned Projection 
+We will now generate a h-l projection to see where the Bragg peaks fall. Since our in-plane box is very small in the Qx/Qy directions it does not make much sense to have a large grid as there would be many empty pixels. So we change Grid Size Qx and Qy each to 100, as well as 'Select Projection' to HL (under Data Processing). 
+
+Press View -> Binned Projection [Ctrl+4]
 
 We will now see a HL projection containing our (10) CTR. Next we take a profile along the CTR:
  1) First select "L(qz)" as the axis of interest under Profile Tools in the parameter tree. 
@@ -199,7 +201,7 @@ We will now see a HL projection containing our (10) CTR. Next we take a profile 
   
 .. image:: ./images/tutorial6.png
  
-From this the Bragg peaks that are masked by the beamstops lie at Qz ~ 1.7 and Qz ~ 4.5. If we divide these by b3 (0.889) we get the reciprocal lattice space positions 1.9 and 5.0. Since we are only estimating the position of the Bragg peaks here it is not too important. This rod then has Bragg peaks at 2 and 5 in surface units and they are seperated by 3 RLU as one would expect given the ABC stacking. However, for (10) rod the Bragg peaks should be at 1,4, and 7. Therefore, our orientation is incorrect by exactly 60 degrees.
+From this the Bragg peaks that are masked by the beamstops lie at Qz ~ 1.7 and Qz ~ 4.5. If we divide these by b3 (0.889) we get the reciprocal lattice space positions 1.9 and 5.0. Since we are only estimating the position of the Bragg peaks here it is not too important if they are little off. This rod then has Bragg peaks at 2 and 5 in surface units and they are seperated by 3 RLU as one would expect given the ABC stacking. However, for (10) rod the Bragg peaks should be at 1,4, and 7. Therefore, our orientation is incorrect by exactly 60 degrees.
 
 To correct this we can either add 60 to 49.3 and put 109.3 in the angle offset or instead change the Aux Angle offset to 60 degrees. 
 
@@ -212,27 +214,25 @@ We can go back to transformed detector view and just select the parts around the
 
 .. image:: ./images/tutorial7.png
 
-We can increase the Grid Size Qx and Qy to 1000, and again select h-k projection from the parameter menu. Then click View -> Binned projection. After it is complete one can run plotting.py (F6) and hopefully get something that looks like this:
+We can increase the Grid Size Qx and Qy to 1000, and again select h-k projection from the parameter menu. Then click View -> Binned projection. After it is complete one can run plotting.py ]F6] and hopefully get something that looks like this:
 
 .. image:: ./images/tutorial8.png
 
 CTR Extraction
 ````````````````
-Here we will export a CTR to a 3d grid and extracting it with a python script. 
+Here we will export a CTR to a 3d grid and extract it with a python script. 
 
-1) We should raw a mask around the CTR in the in-plane view as before, there should be enough background around the CTR to be able to perform background subtraction. For this we have chosen the (20) CTR.
+1) We should draw a mask around the CTR in the in-plane view as before, there should be enough background around the CTR to be able to perform background subtraction. For this we have chosen the (20) CTR.
 
 2) In the transformed detector view, make sure all parts of the CTRs you might be interested in are included. 
 
-3) Select an appropriate grid size, this can't be too big since for a 3d grid you will quickly run out of memory. If Qx and Qy have big grids it is likely not every voxel will be populated since we only selected a small box around the CTR in Qx and Qy. If Qz is large it can be okay, but it does mean you will have many points along the CTR. Here we have selected 30 for Qx and Qy and 400 for Qz. We should also enable apply intensity corrections in the parameter tree. 
+3) Select an appropriate grid size, this can't be too big since for a 3d grid you will quickly run out of memory. If Qx and Qy have big grids it is likely not every voxel will be populated since we only selected a small box around the CTR in Qx and Qy. If Qz is large it can be okay, but it does mean you will have many points along the CTR. Here we have selected  50 for Qx and Qy and 400 for Qz. We should also enable 'Apply Intensity Corrections' in the parameter tree. 
 
-3) To check with can create a h-l projection. The profile along this projection includees the CTR profile, and if you are able to take representive background regions either side it could be used to directly extract the CTR profile. 
-
-.. image:: ./images/tutorial9.png
+3) To check our selection, we can create a h-l projection. The profile along this projection includes the CTR profile, and if you are able to take representive background regions either side it could be used to directly extract the CTR profile. 
 
 4) Click View -> Export 3d Data
 
-This will take a little time, afterwhich you can save a 3d grid to a .npz file. 
+This will take a little time, afterwhich you can save the 3d grid to a .npz file. 
 
 
 Viewing CTR in 3D
@@ -254,7 +254,7 @@ And then we can run the following code to plot our data in 3d::
  import mayavi.mlab as mlab
  import numpy as np
 
- filename = "au111_10_3d_30_30_400.npz"
+ filename = "au111_20_3d_50_50_400.npz"
  background = 70
  cmin= 0
  cmax = 5.5
@@ -274,7 +274,7 @@ And then we can run the following code to plot our data in 3d::
  
 .. image:: ./images/tutorial10.png
 
-It is somewhat noticeable that the CTR still curves a bit towards the top and this is due to the sample being somewhat misaligned. It can be fixed by optimising the various parameters such as angle offset, angle of incidence, sample-detector distance and the Center Pixel. Alternatively (as with this data) the sample was not accurately aligned durng the experiment. However, it is still possible to extract the CTR data as in the next section. 
+The CTR still curves a bit towards the top here and this is due to the sample being somewhat misaligned. It can be fixed by optimising the various parameters such as angle offset, angle of incidence, sample-detector distance and the Center Pixel. Alternatively (as with this data) the sample was not accurately aligned durng the experiment. However, it is still possible to extract the CTR data as in the next section. 
 
 Further information about plotting with mayavi can be found on their site:
 
