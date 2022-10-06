@@ -48,7 +48,7 @@ Start HAT, if you installed hat with pip (and you're in the correct enviroment) 
 
 ``xrayhat``
 
-Otherwise from the source directory you can run (you mayneed to replace python with python3):
+Otherwise from the source directory you can run (you may need to replace python with python3):
 
 ``python main.py``
 
@@ -58,34 +58,34 @@ Next click on |File -> Select Data Images| and then find and select the .TIF ima
 
 They should have names such as: "au_111_naoh_2_00023-00001.tif", one of the files is a dark image and this can be ignored. The compressed archive also contains .metadata files for each image, the P07 2019 preset will automatically handel this metadata. In particular it will read the angle values and an intensity monitor value. 
 
-Next several parameters should be chosen under Experiment in the parameter tree.
-The energy = 73.7 keV
-Sample-Detector Dist. = 1.6m
+Next,several parameters should be chosen under Experiment in the parameter tree::
 
-Center Pixel X = 1003
-Center Pixel Y = 2024
+  The energy = 73.7 keV
+  Sample-Detector Dist. = 1.6m
+  Center Pixel X = 1003
+  Center Pixel Y = 2024
 
-The number of pixels and size the pixel should be chosen correctly since we alreay selected the correct preset. The angle offset is to be determined later. But we no from the experimental geomtery that the direction is negative. 
+The number of pixels and size the pixel should be chosen correctly since we already selected the 2019 P07 preset. The angle offset is to be determined later. But we know from the experimental geomtery that the direction is positive. 
 
-Under crystall we can choose the Au(111) preset since the data was collected from a Au(111) sample. These will set the lattice parameters to the correct values for Au(111) in surface coordinates. 
+Under crystall we can choose the Au(111) preset since the data was collected from a Au(111) sample. This will set the lattice parameters to the correct values for Au(111) in surface coordinates. 
 
-In Data Proccessing we should select 180 degrees for Image rotation as the images are rotated. The binning value will depend on how much system RAM  is available, but since we are only quickly exploring the data - setting it to value of 4 or higher is a good idea.
+In 'Data Proccessing' we should select 180 degrees for Image rotation as the images are rotated. The binning value will depend on how much system RAM is available, 4 should be safe for exploring the data. Although the images shown below were creating with no binning. i.e. 1. 
 
-Unless you know you have a GPU that is correctly setup acceleration should be set to "Numba (cpu)"
+Unless you know you have a GPU that is correctly setup acceleration should be set to "Numba (cpu)". And in fact the main bottleneck is current transfering data from memory to the GPU so on a fast CPU there isn't much of a performance uptick. 
 
-Now we can load the data, although it could be a good idea to save the file selection and parameters first so you can restore them if needed (File -> Quick Save). 
+Now we can load the data. But first it could be a good idea to save the file selection and parameters first so you can restore them if needed (File -> Quick Save). [ctrl+s]
 
-To load the data click on (File -> Load)
+To load the data click on (File -> Load) [ctrl+l]
 
 
 Detector View
 ````````````````
-While the images are loading the view will update after every 100 images. After loading you should have a view that looks like the screenshot below. This is called the detecor view mode and can be accessed at anytime by clicking (View -> Detector View) or pressing CTRL+1.
+While the images are loading the view will update after every 100 images. After loading you should have a view that looks like the screenshot below. This is called the detecor view mode and can be accessed at anytime by clicking (View -> Detector View) [CTRL+1].
 
 .. image:: ./images/screenshot1.png
 
 
-In this view the image is construsted from maximum intensity of each pixel accross the whole rotation. If instead you'd like the average intensity across the whole rotation you can do this by selecting "Mean Images instead of Max" under Data Processing in the parameter tree. 
+In this view the image is constructed from the maximum intensity of each pixel accross the whole rotation. If instead you'd like the average intensity across the whole rotation you can do this by selecting "Mean Images instead of Max" under Data Processing in the parameter tree. 
 
 From the toolbar, masks can be added. Mask are attached the view they are created in, for detector view the masks are exclusionary and can be used to reject pixels from later binning. This could be useful for excluding gaps between detector pixels or areas of the detector that are covered. 
 
@@ -93,9 +93,9 @@ If the "Toggle ROI" button is pressed on the toolbar a box profile is created an
 
 Transformed Detector View
 ````````````````
-Since the HAT GUI currently doesn't support displaying in non-rectangular, we will need to work in Q units so the in-plane project we generate wont look distored. You can choosen this under "Reciprocal Units" in the parameter bar under Crystal. 
+Since the HAT GUI currently doesn't support displaying in non-rectangular, we will need to work in Q units so the in-plane projection we generate wont look distored. You can choosen this under "Reciprocal Units" in the parameter tree under Crystal. 
 
-Next click the View menu and choose "Transformed Detector View" (ctrl+2). The current view will then be distored and have units on the axis as in the screenshot below.
+Next click the View menu and choose "Transformed Detector View" [ctrl+2]. The current view will then be distored and have units on the axis as in the screenshot below.
 
 .. image:: ./images/tutorial1.png
 
