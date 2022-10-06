@@ -287,23 +287,118 @@ It can also be useful to visualise larger volumes of reciprocal, this is for exa
 
 CTR Exraction II
 ````````````````
-We'd now like to take slices along our extracted data and 
-Inside python or jupyter we will next run the following code segments to take slices of our 3d data. Then for each slice we take a region for our signal and 
+We'd now like to take slices along our extracted data and extract the CTR intensity, you can use whatever package or programming language you prefer here as long as it can read .npz files. Here we will use python and run the following code segments to take slices of our 3d data. Then for each slice we take a region for our signal and background. The background is thenscaled and subtracted from the CTR signal. 
 
-First we should import the libraries::
+First we should load the data and import the libraries::
 
  # this is a script to integrate a CTR froma 3d grid
  import numpy as np
  import matplotlib.pylab as plt
  import lmfit
  from lmfit.lineshapes import gaussian2d, lorentzian
+ import cv2
+ import matplotlib.patches as patches
+ import scipy.ndimage
+ import scipy.interpolate
+ import pdb
 
  cm = 1/2.54
 
- file = "/home/gary/rods/20_35_35_400.npy"
+ file = "/home/garyh/pyenvs/au111_20_3d_50_50_400.npz"
+ data = np.load(file)['data']
+ zaxis = np.load(file)['z'][0]
+ 
+Next we define some useful parameters::
+
+  #list of image numbersw to ignore
+ ignore = [6,8,9,324]#+list(range(266,296))
+ manual = []
+ values = []
+ ls=  []
+
+ #parameters
+ lbraggs=[0,3,6,9] #list of where the bragg peaks are
+ min_dist_to_bragg = 0.4 #we will ignore points closer to the bragg peak
+ b3=0.889 #reciprocal lattice constant to convert Q to RLU
+ l_cutoff = 8.5  #ignore l values above this
+ miniuim_intensity = 600 #minium intensity values
+
+ #roi and backgrounds
+ width = 16
+ height = 16
+ background = 8
+
+Now we loop through each slice image and extract the data::
+
+ for i in range(np.shape(data)[2]): 
+
+     extract = True
+     l = zaxis[i]/b3
+
+     #check ignore list
+     if i in ignore:
+         extract = False
+     elif l > l_cutoff:
+         extract = False    
+
+     #fliter out points close to the bragg peaks
+     for bragg in lbraggs:
+         if abs(l-bragg) < min_dist_to_bragg:
+             extract = False
+
+     if extract:
+         print(i,"l = ",l)
+         z=  data[:,:,i]
+         mask = ~(z == 0)
+
+         # array of (number of points, 2) containing the x,y coordinates of the valid values only
+         xx, yy = np.meshgrid(np.arange(z.shape[1]), np.arange(z.shape[0]))
+         xym = np.vstack((np.ravel(xx[mask]), np.ravel(yy[mask]))).T
+
+         data0 = z[mask]
+         if len(data0) < 2:
+            continue
+
+         interp0 = scipy.interpolate.NearestNDInterpolator( xym, data0 )
+         result0 = interp0(np.ravel(xx), np.ravel(yy)).reshape( xx.shape )   
+
+         #index with highest intensity
+         indy,indx = np.unravel_index(np.argmax(result0 , axis=None), z.shape)
 
 
 
+         xval = (int(indx - width/2-background/2),int(indx+width/2+background/2))
+         yval = (int(indy -height/2-background/2),int(indy+height/2+background/2))
+
+         signal_with_bkground = np.sum(result0[yval[0]:yval[1],xval[0]:xval[1]])
+
+         signal = np.sum(result0[int(indy-height/2):int(indy+height/2),int(indx- width/2):int(indx+ width/2)])
+
+         signal_size = width*height
+         combined_size = (width+background)*(height+background)
+         difference =combined_size-signal_size 
+         normalise = signal_size/difference
+         background_sig = (signal_with_bkground - signal)*normalise
+         signal_i = signal - background_sig
+
+         if signal_i > miniuim_intensity:                     
+             fig, axs = plt.subplots(1,2)
+             ax = axs[0]
+             ip1 = ax.imshow(result0,vmin=0,vmax=400)
+             rect = patches.Rectangle((indx - width/2, indy-height/2), width, height, linewidth=1, edgecolor='r', facecolor='none')
+             rect2 = patches.Rectangle((indx - width/2-background/2, indy - height/2-background/2),
+                                       width+background, height+background, linewidth=1, edgecolor='g', facecolor='none')
+
+             # Add the patch to the Axes
+             ax.add_patch(rect)
+             ax.add_patch(rect2)
+
+             ax = axs[1]
+             ip = ax.imshow(z,vmin=0,vmax=500)
+
+             values.append(signal_i)
+             ls.append(zaxis[i])
+             plt.show() 
 
 
 
