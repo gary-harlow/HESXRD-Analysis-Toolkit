@@ -20,7 +20,7 @@ In linux the following terminal command will download the dataset.
 
 ``wget https://figshare.com/ndownloader/files/36048185``
 
- in linux you can usually use the 7za command to uncompress the file. Firstly check it is available::
+In linux you can usually use the 7za command to uncompress the file. Firstly check it is available::
 
   whereis 7za
   7za: /usr/bin/7za /usr/share/man/man1/7za.1.gz
